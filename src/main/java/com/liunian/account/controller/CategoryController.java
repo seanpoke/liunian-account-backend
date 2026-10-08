@@ -27,6 +27,7 @@ public class CategoryController {
     public record CreateReq(Long familyId,
                             @NotBlank String name,
                             @NotBlank String type,
+                            String code,
                             String icon,
                             String color) {
     }
@@ -39,7 +40,7 @@ public class CategoryController {
 
     @PostMapping("/category")
     public R<Map<String, Object>> create(@RequestBody CreateReq req) {
-        return R.ok(categoryService.create(UserContext.get(), req.familyId(), req.name(), req.type(), req.icon(), req.color()));
+        return R.ok(categoryService.create(UserContext.get(), req.familyId(), req.name(), req.type(), req.code(), req.icon(), req.color()));
     }
 
     @DeleteMapping("/category/{id}")

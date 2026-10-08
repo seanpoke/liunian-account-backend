@@ -48,6 +48,7 @@ public class CategoryService {
             m.put("familyId", c.getFamilyId());
             m.put("name", c.getName());
             m.put("type", c.getType());
+            m.put("code", c.getCode() == null ? "" : c.getCode());
             m.put("icon", c.getIcon() == null ? "" : c.getIcon());
             m.put("color", c.getColor() == null ? "" : c.getColor());
             m.put("sort", c.getSort() == null ? 0 : c.getSort());
@@ -58,7 +59,7 @@ public class CategoryService {
     }
 
     @Transactional
-    public Map<String, Object> create(String openid, Long familyId, String name, String type, String icon, String color) {
+    public Map<String, Object> create(String openid, Long familyId, String name, String type, String code, String icon, String color) {
         requireMember(openid, familyId);
         if (!"income".equals(type) && !"expense".equals(type)) {
             throw new BizException(ErrorCode.BAD_REQUEST, "type 必须是 income/expense");
@@ -70,12 +71,14 @@ public class CategoryService {
         c.setFamilyId(familyId);
         c.setName(name);
         c.setType(type);
+        c.setCode(code);
         c.setIcon(icon);
         c.setColor(color);
         c.setSort(maxSort == null ? 1 : maxSort + 1);
         c.setIsSystem(0);
         categoryMapper.insert(c);
         return Map.of("id", c.getId(), "name", c.getName(), "type", c.getType(),
+                "code", c.getCode() == null ? "" : c.getCode(),
                 "icon", c.getIcon() == null ? "" : c.getIcon(),
                 "color", c.getColor() == null ? "" : c.getColor(), "isSystem", 0);
     }

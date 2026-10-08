@@ -9,23 +9,17 @@ server:
 spring:
   sql:
     init:
-      mode: always
-      schema-locations: classpath:schema.sql
-      continue-on-error: true
-      encoding: UTF-8
+      # 关闭启动自动执行 SQL：建表由人工手动执行 ci/schema.sql 完成
+      mode: never
   datasource:
     url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DB:liunian_account}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true
     username: ${MYSQL_USER:root}
     password: ${MYSQL_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      # 共享 MySQL 空闲连接可能被中间设备/代理静默重建，新会话丢失 USE 语义、
-      # 回退到 root 默认库(如 checkin)。以下三层防御：
-      # 1) 借用前校验不带库名限定：schema 正确返回 1 行，schema 错误直接报错 -> 坏连接丢弃重建
-      # 2) 新建连接显式 USE 本项目专用库
-      # 3) 缩短保活(60s)/生命周期(5min)，赶在中间设备断开前主动轮换连接
+      # JDBC URL 已锁定本库(liunian_account)；借用连接时校验当前库是否正确，
+      # schema 正确返回 1 行，schema 错误直接报错 -> 坏连接丢弃重建
       connection-test-query: SELECT COUNT(*) FROM reminder_setting
-      connection-init-sql: USE `liunian_account`
       minimum-idle: 2
       maximum-pool-size: 10
       max-lifetime: 300000

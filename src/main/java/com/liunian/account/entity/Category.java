@@ -15,7 +15,8 @@ public class Category {
     private Long familyId;      // null = 系统预置(global)
     private String name;
     private String type;        // income / expense
-    private String icon;
+    private String code;        // 分类语义编码，如 food
+    private String icon;        // emoji，如 🍜
     private String color;
     private Integer sort;
     private Integer isSystem;   // 0/1

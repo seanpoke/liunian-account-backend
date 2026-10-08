@@ -94,7 +94,8 @@ CREATE TABLE IF NOT EXISTS `category` (
   `family_id` BIGINT       DEFAULT NULL COMMENT '归属家庭ID，NULL 表示系统预置（global）',
   `name`      VARCHAR(32) NOT NULL COMMENT '分类名称',
   `type`      VARCHAR(16) NOT NULL COMMENT '类型：income=收入，expense=支出',
-  `icon`      VARCHAR(32) DEFAULT NULL COMMENT '分类图标标识',
+  `code`      VARCHAR(32) DEFAULT NULL COMMENT '分类语义编码，如 food',
+  `icon`      VARCHAR(32) DEFAULT NULL COMMENT '分类图标（emoji，如 🍜）',
   `color`     VARCHAR(16) DEFAULT NULL COMMENT '分类颜色（十六进制，如 #FF7043）',
   `sort`      INT         DEFAULT 0 COMMENT '排序权重，越小越靠前',
   `is_system` TINYINT(1)  NOT NULL DEFAULT 0 COMMENT '是否系统预置：0=自定义，1=系统',
@@ -127,16 +128,17 @@ CREATE TABLE IF NOT EXISTS `budget` (
   UNIQUE KEY `uk_family` (`family_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='家庭预算表';
 
--- 系统预置分类（family_id=NULL 表示 global），成员自定义分类在运行时写入本家庭副本
-INSERT IGNORE INTO `category` (`family_id`,`name`,`type`,`icon`,`color`,`sort`,`is_system`) VALUES
-  (NULL,'餐饮','expense','food','#FF7043',1,1),
-  (NULL,'交通','expense','bus','#42A5F5',2,1),
-  (NULL,'购物','expense','cart','#AB47BC',3,1),
-  (NULL,'居家','expense','home','#26A69A',4,1),
-  (NULL,'娱乐','expense','game','#FFA726',5,1),
-  (NULL,'医疗','expense','med','#EF5350',6,1),
-  (NULL,'其他','expense','more','#78909C',7,1),
-  (NULL,'工资','income','salary','#66BB6A',1,1),
-  (NULL,'奖金','income','gift','#9CCC65',2,1),
-  (NULL,'理财','income','chart','#29B6F6',3,1),
-  (NULL,'其他','income','more','#78909C',4,1);
+-- 系统预置分类（family_id=NULL 表示 global）；code=语义编码，icon=emoji。成员自定义分类在运行时写入本家庭副本
+INSERT IGNORE INTO `category` (`family_id`,`name`,`type`,`code`,`icon`,`color`,`sort`,`is_system`) VALUES
+  (NULL,'餐饮','expense','food',        '🍜','#FF7043',1,1),
+  (NULL,'交通','expense','transport',   '🚌','#42A5F5',2,1),
+  (NULL,'购物','expense','shopping',    '🛒','#AB47BC',3,1),
+  (NULL,'居家','expense','home',        '🏠','#26A69A',4,1),
+  (NULL,'娱乐','expense','fun',         '🎮','#FFA726',5,1),
+  (NULL,'医疗','expense','medical',     '💊','#EF5350',6,1),
+  (NULL,'其他','expense','other',       '📦','#78909C',7,1),
+  (NULL,'工资','income', 'salary',      '💰','#66BB6A',1,1),
+  (NULL,'奖金','income', 'bonus',       '🎁','#9CCC65',2,1),
+  (NULL,'理财','income', 'finance',     '📈','#29B6F6',3,1),
+  (NULL,'其他','income', 'other_income', '📦','#78909C',4,1);
+
