@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.liunian.account.mapper.TransactionMapper">
+
+    <sql id="dateRange">
+        <where>
+            family_id = #{familyId}
+            <if test="start != null">AND date &gt;= #{start}</if>
+            <if test="end != null">AND date &lt;= #{end}</if>
+            <if test="openid != null and openid != ''">AND openid = #{openid}</if>
+        </where>
+    </sql>
+
+    <select id="summary" resultType="java.util.HashMap">
+        SELECT
+            COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) AS income,
+            COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) AS expense
+        FROM transaction
+        <include refid="dateRange"/>
+    </select>
+
+    <select id="byCategory" resultType="java.util.HashMap">
+        SELECT category_name AS name, COALESCE(SUM(amount), 0) AS amount
+        FROM transaction
+        WHERE family_id = #{familyId}
+        <if test="start != null">AND date &gt;= #{start}</if>
+        <if test="end != null">AND date &lt;= #{end}</if>
+        AND type = 'expense'
+        GROUP BY category_name
+        ORDER BY amount DESC
+    </select>
+
+    <select id="byDay" resultType="java.util.HashMap">
+        SELECT date,
+               COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) AS income,
+               COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) AS expense
+        FROM transaction
+        <include refid="dateRange"/>
+        GROUP BY date
+        ORDER BY date ASC
+    </select>
+
+    <select id="byMember" resultType="java.util.HashMap">
+        SELECT t.openid,
+               m.nickname AS nickname,
+               COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS amount
+        FROM transaction t
+        LEFT JOIN family_member m ON m.family_id = t.family_id AND m.openid = t.openid AND m.status = 'active'
+        WHERE t.family_id = #{familyId}
+        <if test="start != null">AND t.date &gt;= #{start}</if>
+        <if test="end != null">AND t.date &lt;= #{end}</if>
+        GROUP BY t.openid, m.nickname
+        ORDER BY amount DESC
+    </select>
+
+</mapper>

@@ -1,0 +1,83 @@
+server:
+  port: ${SERVER_PORT:8445}
+  servlet:
+    context-path: /api
+    encoding:
+      charset: UTF-8
+      enabled: true
+
+spring:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      continue-on-error: true
+      encoding: UTF-8
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DB:liunian_account}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 共享 MySQL 空闲连接可能被中间设备/代理静默重建，新会话丢失 USE 语义、
+      # 回退到 root 默认库(如 checkin)。以下三层防御：
+      # 1) 借用前校验不带库名限定：schema 正确返回 1 行，schema 错误直接报错 -> 坏连接丢弃重建
+      # 2) 新建连接显式 USE 本项目专用库
+      # 3) 缩短保活(60s)/生命周期(5min)，赶在中间设备断开前主动轮换连接
+      connection-test-query: SELECT COUNT(*) FROM reminder_setting
+      connection-init-sql: USE `liunian_account`
+      minimum-idle: 2
+      maximum-pool-size: 10
+      max-lifetime: 300000
+      keepalive-time: 60000
+      validation-timeout: 3000
+      idle-timeout: 120000
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+    default-property-inclusion: non_null
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
+      timeout: 5000ms
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+          # 定期驱逐/保活空闲连接，避免远端 Redis 空闲被中间设备断开后首次借用 500
+          time-between-eviction-runs: 30000
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: none
+      logic-delete-field: deleted
+  type-aliases-package: com.liunian.account.entity
+  mapper-locations: classpath*:/mapper/*.xml
+
+jwt:
+  secret: ${JWT_SECRET:change-me-please}
+  expire-hours: 168
+
+wx:
+  appid: ${WX_APPID:}
+  secret: ${WX_SECRET:}
+  mock: ${WX_MOCK:false}
+  invite-page: ${WX_INVITE_PAGE:pages/invite/invite}
+  msg-tmpl-id: ${WX_MSG_TMPL_ID:}
+
+invite:
+  max-members: 10
+  expire-hours: 168
+  block-hours: 24
+
+reminder:
+  cron: "0 * * * * ?"
