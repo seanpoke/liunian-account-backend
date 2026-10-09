@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+*.iml
+*.md
+
+# 构建产物与日志
+target/
+log/
+logs/
+
+# 不打进镜像的辅助文件
+ci/
+doc/
+script/

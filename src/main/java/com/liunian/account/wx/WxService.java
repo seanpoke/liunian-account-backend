@@ -5,7 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.liunian.account.common.BizException;
 import com.liunian.account.common.ErrorCode;
 import com.liunian.account.config.WxProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -17,6 +23,8 @@ import java.util.Map;
  */
 @Service
 public class WxService {
+
+    private static final Logger log = LoggerFactory.getLogger(WxService.class);
 
     private final WxProperties wx;
     private final RestTemplate rt = new RestTemplate();
@@ -43,9 +51,14 @@ public class WxService {
                 throw new BizException(ErrorCode.UNAUTHORIZED, "微信登录失败:" + resp);
             }
             return n.get("openid").asText();
+        } catch (HttpStatusCodeException e) {
+            log.error("[Wx] code2Session HTTP 失败: status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString());
+            throw new BizException(ErrorCode.UNAUTHORIZED, "微信登录失败:" + e.getMessage());
         } catch (RestClientException e) {
-            throw new BizException(ErrorCode.INTERNAL, "调用微信 code2Session 异常:" + e.getMessage());
+            log.error("[Wx] code2Session 网络异常", e);
+            throw new BizException(ErrorCode.UNAUTHORIZED, "微信登录失败:" + e.getMessage());
         } catch (Exception e) {
+            log.error("[Wx] code2Session 解析失败", e);
             throw new BizException(ErrorCode.INTERNAL, "解析微信响应失败:" + e.getMessage());
         }
     }
@@ -63,8 +76,13 @@ public class WxService {
                 "page", page == null ? wx.getInvitePage() : page,
                 "data", data);
         try {
-            rt.postForObject(url, body, String.class);
+            rt.postForObject(url, jsonEntity(body), String.class);
+        } catch (HttpStatusCodeException e) {
+            log.warn("[Wx] 订阅消息推送失败 openid={} status={} body={}",
+                    openid, e.getStatusCode(), e.getResponseBodyAsString());
+            throw new BizException(ErrorCode.INTERNAL, "推送订阅消息异常:" + e.getMessage());
         } catch (RestClientException e) {
+            log.warn("[Wx] 订阅消息推送网络异常 openid={}", openid, e);
             throw new BizException(ErrorCode.INTERNAL, "推送订阅消息异常:" + e.getMessage());
         }
     }
@@ -80,12 +98,30 @@ public class WxService {
                 "scene", scene,
                 "page", page == null ? wx.getInvitePage() : page,
                 "check_path", false,
-                "env_version", "release");
+                "env_version", wx.getEnvVersion());
         try {
-            byte[] bytes = rt.postForObject(url, body, byte[].class);
+            byte[] bytes = rt.postForObject(url, jsonEntity(body), byte[].class);
+            log.info("[Wx] 小程序码生成成功 scene={}", scene);
             return "data:image/png;base64," + Base64.getEncoder().encodeToString(bytes);
-        } catch (RestClientException e) {
+        } catch (HttpStatusCodeException e) {
+            // getwxacodeunlimit 在非 JSON 或 env_version 不匹配时返回 412(空 body)；
+            // 其他情况返回 JSON 错误体。这里把状态码与响应体都打出来便于定位。
+            log.error("[Wx] 生成小程序码失败 scene={} status={} body={}",
+                    scene, e.getStatusCode(), e.getResponseBodyAsString());
             throw new BizException(ErrorCode.INTERNAL, "生成小程序码异常:" + e.getMessage());
+        } catch (RestClientException e) {
+            log.error("[Wx] 生成小程序码网络异常 scene={}", scene, e);
+            throw new BizException(ErrorCode.INTERNAL, "生成小程序码异常:" + e.getMessage());
+        }
+    }
+
+    private HttpEntity<String> jsonEntity(Map<String, Object> body) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        try {
+            return new HttpEntity<>(om.writeValueAsString(body), headers);
+        } catch (Exception e) {
+            throw new BizException(ErrorCode.INTERNAL, "序列化微信请求体失败:" + e.getMessage());
         }
     }
 }

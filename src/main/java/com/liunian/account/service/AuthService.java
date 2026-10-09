@@ -10,6 +10,8 @@ import com.liunian.account.mapper.FamilyMemberMapper;
 import com.liunian.account.mapper.UserMapper;
 import com.liunian.account.security.JwtUtil;
 import com.liunian.account.wx.WxService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +20,8 @@ import java.time.LocalDateTime;
 
 @Service
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserMapper userMapper;
     private final FamilyMemberMapper memberMapper;
@@ -82,6 +86,7 @@ public class AuthService {
                 .in(FamilyMember::getStatus, "active", "pending"));
         boolean isMember = member != null;
         Long familyId = isMember ? member.getFamilyId() : null;
+        log.info("[LOGIN] openid={} isMember={} familyId={}", openid, isMember, familyId);
         return new LoginResult(token, openid, isMember, familyId);
     }
 }

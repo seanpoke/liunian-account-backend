@@ -16,4 +16,5 @@ public class WxProperties {
     private boolean mock;
     private String invitePage;
     private String msgTmplId;
+    private String envVersion = "release";
 }

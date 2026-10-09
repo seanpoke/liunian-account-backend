@@ -83,6 +83,9 @@ public class InvitationService {
         String qrImageUrl = null;
         if ("qr".equals(inv.getType())) {
             qrImageUrl = wxService.getWxaCode(token, wx.getInvitePage());
+            log.info("[INVITATION] 已生成小程序码 token={} familyId={}", token, familyId);
+        } else {
+            log.info("[INVITATION] 已创建分享邀请 token={} familyId={} type={}", token, familyId, inv.getType());
         }
         return Map.of(
                 "token", token,

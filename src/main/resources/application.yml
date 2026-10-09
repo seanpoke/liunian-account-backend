@@ -67,6 +67,7 @@ wx:
   mock: ${WX_MOCK:false}
   invite-page: ${WX_INVITE_PAGE:pages/invite/invite}
   msg-tmpl-id: ${WX_MSG_TMPL_ID:}
+  env-version: ${WX_ENV_VERSION:release}
 
 invite:
   max-members: 10
