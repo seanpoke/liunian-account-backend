@@ -1,33 +1,38 @@
 # 流年小账后端 · 仅编排应用本身
-# MySQL / Redis 已独立存在，不在本文件内编排。
-#
-# 用法：
-#   1) 部署（拉取 CI 自动构建的镜像）：
-#        docker login ghcr.io          # 首次需登录，用 GitHub 用户名 + 有 read:packages 权限的 token
-#        docker compose up -d
-#   2) 本地直接构建（不用 GHCR）：把下面 image 行注释掉，取消 build 行注释即可。
-#
-# 注意：MySQL / Redis 的地址在 ci/.env 里配置。
-#   - 若它们和本容器在同一台宿主机（localhost）：把 ci/.env 的 MYSQL_HOST / REDIS_HOST 改成 host.docker.internal
-#   - 若在其它机器（如远端 124.220.2.38）：保持 ci/.env 原值即可，容器直接走网络访问
+# MySQL / Redis 已独立存在（各自容器、各自默认网络），这里让 app 加入它们已有的网络，用容器名访问。
 
 services:
   app:
-    # CI 推送的镜像（含 latest 标签）
     image: ghcr.io/seanpoke/liunian-account-backend:latest
-    # 本地构建替代方案：
+    # 本地构建替代方案（取消注释、并注释掉上面的 image 行）：
     # build: .
     container_name: liunian-account-backend
     restart: unless-stopped
     ports:
       - "8445:8445"
     env_file:
-      - .env          # 复用本地已有的全部环境变量（MYSQL_* / REDIS_* / WX_* / JWT_SECRET ...）
+      - ./ci/.env
     environment:
       SERVER_PORT: 8445
+      # 通过宿主机已有的容器网络访问 MySQL / Redis（覆盖 ci/.env 里的远程 IP）
+      # 容器间通信用容器内端口 3306 / 6379，不是宿主机发布端口 53306 / 6479
+      MYSQL_HOST: mysql8-container
+      MYSQL_PORT: 3306
+      REDIS_HOST: redis_container
+      REDIS_PORT: 6379
+    networks:
+      - mysql_default
+      - redis_default
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8445/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+
+# 复用宿主机上已存在的网络（external: true = 不新建，直接用已有的）
+networks:
+  mysql_default:
+    external: true
+  redis_default:
+    external: true
