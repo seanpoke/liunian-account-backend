@@ -22,7 +22,7 @@ services:
     ports:
       - "8445:8445"
     env_file:
-      - ./ci/.env          # 复用本地已有的全部环境变量（MYSQL_* / REDIS_* / WX_* / JWT_SECRET ...）
+      - .env          # 复用本地已有的全部环境变量（MYSQL_* / REDIS_* / WX_* / JWT_SECRET ...）
     environment:
       SERVER_PORT: 8445
     healthcheck:
