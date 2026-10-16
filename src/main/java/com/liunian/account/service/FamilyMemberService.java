@@ -8,6 +8,7 @@ import com.liunian.account.entity.FamilyMember;
 import com.liunian.account.mapper.FamilyMapper;
 import com.liunian.account.mapper.FamilyMemberMapper;
 import com.liunian.account.mapper.TransactionMapper;
+import com.liunian.account.service.FamilyService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,11 +22,14 @@ public class FamilyMemberService {
     private final FamilyMemberMapper memberMapper;
     private final FamilyMapper familyMapper;
     private final TransactionMapper transactionMapper;
+    private final FamilyService familyService;
 
-    public FamilyMemberService(FamilyMemberMapper memberMapper, FamilyMapper familyMapper, TransactionMapper transactionMapper) {
+    public FamilyMemberService(FamilyMemberMapper memberMapper, FamilyMapper familyMapper,
+                               TransactionMapper transactionMapper, FamilyService familyService) {
         this.memberMapper = memberMapper;
         this.familyMapper = familyMapper;
         this.transactionMapper = transactionMapper;
+        this.familyService = familyService;
     }
 
     public FamilyMember requireActive(String openid) {
@@ -57,7 +61,7 @@ public class FamilyMemberService {
     }
 
     public List<Map<String, Object>> list(String openid, Long familyId) {
-        requireActive(openid);
+        requireActive(openid, familyId);
         List<FamilyMember> members = memberMapper.selectList(Wrappers.<FamilyMember>lambdaQuery()
                 .eq(FamilyMember::getFamilyId, familyId)
                 .eq(FamilyMember::getStatus, "active")
@@ -115,13 +119,37 @@ public class FamilyMemberService {
 
     @Transactional
     public void quit(String openid, Long familyId) {
-        FamilyMember me = requireActive(openid);
-        if (!familyId.equals(me.getFamilyId())) {
-            throw new BizException(ErrorCode.FORBIDDEN, "非本家庭成员");
+        FamilyMember me = requireActive(openid, familyId);
+
+        // 退出后剩余的活跃成员（不含本人），按加入时间升序
+        List<FamilyMember> others = memberMapper.selectList(Wrappers.<FamilyMember>lambdaQuery()
+                .eq(FamilyMember::getFamilyId, familyId)
+                .eq(FamilyMember::getStatus, "active")
+                .ne(FamilyMember::getOpenid, openid)
+                .orderByAsc(FamilyMember::getJoinedAt));
+
+        if (others.isEmpty()) {
+            // 规则1：家庭仅剩本人 → 彻底解散（账单等关联数据一并删除，与解散家庭同一套逻辑）
+            familyService.dissolveFamily(familyId);
+            return;
         }
+
+        // 规则3：本人是创建者且还有其他成员 → 转让创建者给最早加入者
         if ("owner".equals(me.getRole())) {
-            throw new BizException(ErrorCode.FORBIDDEN, "创建者须先转让身份");
+            FamilyMember heir = others.get(0);
+            heir.setRole("owner");
+            heir.setUpdatedAt(LocalDateTime.now());
+            memberMapper.updateById(heir);
+
+            Family f = familyMapper.selectById(familyId);
+            if (f != null) {
+                f.setCreatorOpenid(heir.getOpenid());
+                f.setUpdatedAt(LocalDateTime.now());
+                familyMapper.updateById(f);
+            }
         }
+
+        // 规则2 & 规则3 共同点：解除本人与家庭的绑定，历史账单数据保留不删除
         me.setStatus("removed");
         me.setUpdatedAt(LocalDateTime.now());
         memberMapper.updateById(me);
@@ -129,10 +157,7 @@ public class FamilyMemberService {
     }
 
     public void updateMe(String openid, Long familyId, String nickname, String avatar) {
-        FamilyMember me = requireActive(openid);
-        if (!familyId.equals(me.getFamilyId())) {
-            throw new BizException(ErrorCode.FORBIDDEN, "非本家庭成员");
-        }
+        FamilyMember me = requireActive(openid, familyId);
         if (nickname != null) me.setNickname(nickname);
         if (avatar != null) me.setAvatar(avatar);
         me.setUpdatedAt(LocalDateTime.now());

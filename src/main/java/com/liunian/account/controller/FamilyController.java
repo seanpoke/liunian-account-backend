@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -42,5 +43,16 @@ public class FamilyController {
     @PatchMapping("/family/{familyId}")
     public R<Map<String, Object>> patch(@PathVariable Long familyId, @RequestBody PatchReq req) {
         return R.ok(familyService.patch(UserContext.get(), familyId, req.name(), req.currency(), req.avatar()));
+    }
+
+    @GetMapping("/families")
+    public R<List<Map<String, Object>>> mine() {
+        return R.ok(familyService.myFamilies(UserContext.get()));
+    }
+
+    @PostMapping("/family/{familyId}/dissolve")
+    public R<Void> dissolve(@PathVariable Long familyId) {
+        familyService.dissolve(UserContext.get(), familyId);
+        return R.ok();
     }
 }

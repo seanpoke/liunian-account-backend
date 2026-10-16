@@ -20,13 +20,14 @@ public class StatsController {
     }
 
     @GetMapping("/stats")
-    public R<Map<String, Object>> stats(@RequestParam(required = false) String period,
+    public R<Map<String, Object>> stats(@RequestParam Long familyId,
+                                        @RequestParam(required = false) String period,
                                         @RequestParam(required = false) Integer month,
                                         @RequestParam(required = false) Integer year,
                                         @RequestParam(required = false) String start,
                                         @RequestParam(required = false) String end,
                                         @RequestParam(required = false) String member) {
-        return R.ok(statsService.stats(UserContext.get(), period, month, year,
+        return R.ok(statsService.stats(UserContext.get(), familyId, period, month, year,
                 start == null ? null : LocalDate.parse(start),
                 end == null ? null : LocalDate.parse(end), member));
     }

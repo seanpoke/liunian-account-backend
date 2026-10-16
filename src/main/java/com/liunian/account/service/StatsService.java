@@ -25,14 +25,15 @@ public class StatsService {
         this.memberMapper = memberMapper;
     }
 
-    public Map<String, Object> stats(String openid, String period, Integer month, Integer year,
+    public Map<String, Object> stats(String openid, Long familyId, String period, Integer month, Integer year,
                                      LocalDate start, LocalDate end, String member) {
         FamilyMember me = memberMapper.selectOne(Wrappers.<FamilyMember>lambdaQuery()
-                .eq(FamilyMember::getOpenid, openid).eq(FamilyMember::getStatus, "active"));
+                .eq(FamilyMember::getOpenid, openid)
+                .eq(FamilyMember::getFamilyId, familyId)
+                .eq(FamilyMember::getStatus, "active"));
         if (me == null) {
-            throw new BizException(ErrorCode.FORBIDDEN, "非家庭成员");
+            throw new BizException(ErrorCode.FORBIDDEN, "非本家庭成员");
         }
-        Long familyId = me.getFamilyId();
 
         if ("year".equals(period)) {
             int y = year != null ? year : LocalDate.now().getYear();

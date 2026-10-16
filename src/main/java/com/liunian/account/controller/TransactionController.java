@@ -4,6 +4,7 @@ import com.liunian.account.common.R;
 import com.liunian.account.security.UserContext;
 import com.liunian.account.service.TransactionService;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,7 +27,8 @@ public class TransactionController {
         this.transactionService = transactionService;
     }
 
-    public record TxReq(@NotBlank String type,
+    public record TxReq(@NotNull Long familyId,
+                        @NotBlank String type,
                         Integer amount,
                         Long categoryId,
                         @NotBlank String date,
@@ -40,7 +42,7 @@ public class TransactionController {
 
     @PostMapping("/transaction")
     public R<Map<String, Object>> create(@RequestBody TxReq req) {
-        Long id = transactionService.create(UserContext.get(), req.type(), req.amount(),
+        Long id = transactionService.create(UserContext.get(), req.familyId(), req.type(), req.amount(),
                 req.categoryId(), parse(req.date()), req.note(), req.images());
         return R.ok(Map.of("id", id));
     }
@@ -64,20 +66,22 @@ public class TransactionController {
     }
 
     @GetMapping("/transactions")
-    public R<Map<String, Object>> list(@RequestParam(required = false) String start,
+    public R<Map<String, Object>> list(@RequestParam Long familyId,
+                                       @RequestParam(required = false) String start,
                                        @RequestParam(required = false) String end,
                                        @RequestParam(required = false) String member,
                                        @RequestParam(required = false) String type,
                                        @RequestParam(required = false) Long category,
                                        @RequestParam(defaultValue = "1") long page,
                                        @RequestParam(defaultValue = "20") long size) {
-        return R.ok(transactionService.list(UserContext.get(), parse(start), parse(end),
+        return R.ok(transactionService.list(UserContext.get(), familyId, parse(start), parse(end),
                 member, type, category, page, size));
     }
 
     @GetMapping("/transactions/by-day")
-    public R<Map<String, Object>> listByDay(@RequestParam(required = false) String start,
+    public R<Map<String, Object>> listByDay(@RequestParam Long familyId,
+                                            @RequestParam(required = false) String start,
                                             @RequestParam(required = false) String end) {
-        return R.ok(transactionService.listByDay(UserContext.get(), parse(start), parse(end)));
+        return R.ok(transactionService.listByDay(UserContext.get(), familyId, parse(start), parse(end)));
     }
 }

@@ -43,17 +43,6 @@ public class TransactionService {
         return m;
     }
 
-    /** 取当前用户的（唯一）活跃家庭成员，v1 单家庭模型 */
-    private FamilyMember requireMember(String openid) {
-        FamilyMember m = memberMapper.selectOne(Wrappers.<FamilyMember>lambdaQuery()
-                .eq(FamilyMember::getOpenid, openid)
-                .eq(FamilyMember::getStatus, "active"));
-        if (m == null) {
-            throw new BizException(ErrorCode.FORBIDDEN, "非家庭成员");
-        }
-        return m;
-    }
-
     private void fillCategory(TransactionRecord tx, Long categoryId) {
         if (categoryId == null) {
             return;
@@ -71,10 +60,9 @@ public class TransactionService {
     }
 
     @Transactional
-    public Long create(String openid, String type, Integer amount,
+    public Long create(String openid, Long familyId, String type, Integer amount,
                        Long categoryId, LocalDate date, String note, List<String> images) {
-        FamilyMember me = requireMember(openid);
-        Long familyId = me.getFamilyId();
+        FamilyMember me = requireMemberOfFamily(openid, familyId);
         if (!"income".equals(type) && !"expense".equals(type)) {
             throw new BizException(ErrorCode.BAD_REQUEST, "type 必须是 income/expense");
         }
@@ -172,10 +160,9 @@ public class TransactionService {
         return toVo(tx, m == null ? null : m.getNickname());
     }
 
-    public Map<String, Object> list(String openid, LocalDate start, LocalDate end,
+    public Map<String, Object> list(String openid, Long familyId, LocalDate start, LocalDate end,
                                     String member, String type, Long category, long page, long size) {
-        FamilyMember me = requireMember(openid);
-        Long familyId = me.getFamilyId();
+        requireMemberOfFamily(openid, familyId);
         com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TransactionRecord> q = Wrappers.lambdaQuery(TransactionRecord.class)
                 .eq(TransactionRecord::getFamilyId, familyId);
         if (start != null) q.ge(TransactionRecord::getDate, start);
@@ -196,9 +183,8 @@ public class TransactionService {
     }
 
     /** 按日分组 + 每日小计（首页最近 N 天流水用） */
-    public Map<String, Object> listByDay(String openid, LocalDate start, LocalDate end) {
-        FamilyMember me = requireMember(openid);
-        Long familyId = me.getFamilyId();
+    public Map<String, Object> listByDay(String openid, Long familyId, LocalDate start, LocalDate end) {
+        requireMemberOfFamily(openid, familyId);
         com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TransactionRecord> q = Wrappers.lambdaQuery(TransactionRecord.class)
                 .eq(TransactionRecord::getFamilyId, familyId);
         if (start != null) q.ge(TransactionRecord::getDate, start);

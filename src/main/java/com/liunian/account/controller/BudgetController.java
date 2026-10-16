@@ -34,6 +34,7 @@ public class BudgetController {
 
     @GetMapping("/budget")
     public R<Map<String, Object>> get(@RequestParam Long familyId) {
+        memberService.requireActive(UserContext.get(), familyId);
         Budget b = budgetMapper.selectOne(Wrappers.<Budget>lambdaQuery().eq(Budget::getFamilyId, familyId));
         return R.ok(Map.of("amount", b == null ? 0 : (b.getAmount() == null ? 0 : b.getAmount())));
     }
