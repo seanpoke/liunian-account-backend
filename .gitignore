@@ -6,6 +6,8 @@ target/
 *.iml
 .idea/
 *.log
+*.err
+log/
 boot.log
 smoke.out
 
