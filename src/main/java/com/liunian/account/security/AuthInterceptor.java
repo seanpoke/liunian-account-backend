@@ -25,8 +25,21 @@ public class AuthInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String uri = request.getServletPath();
         String method = request.getMethod();
-        // 唯一匿名公开接口：GET /invitation/{token}（邀请落地页预览）
+        // GET /invitation/{token}（邀请落地页）：默认公开预览；若携带合法 JWT 则填入 UserContext，
+        // 供 getByToken 基于当前用户 openid 做三态分流（applied / applicationStatus）
         if ("GET".equals(method) && uri.matches("^/invitation/[^/]+$")) {
+            String header = request.getHeader("Authorization");
+            if (header != null && header.startsWith("Bearer ")) {
+                try {
+                    String t = header.substring(7);
+                    String openid = jwtUtil.openid(t);
+                    String jti = jwtUtil.jti(t);
+                    if (Boolean.TRUE.equals(redis.hasKey(PREFIX + jti))) {
+                        UserContext.set(openid);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
             return true;
         }
         String header = request.getHeader("Authorization");

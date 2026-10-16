@@ -12,6 +12,7 @@ import com.liunian.account.mapper.FamilyMapper;
 import com.liunian.account.mapper.FamilyMemberMapper;
 import com.liunian.account.mapper.InvitationMapper;
 import com.liunian.account.mapper.UserMapper;
+import com.liunian.account.security.UserContext;
 import com.liunian.account.wx.WxService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -103,11 +105,34 @@ public class InvitationService {
                 .eq(FamilyMember::getFamilyId, inv.getFamilyId())
                 .eq(FamilyMember::getOpenid, inv.getInviterOpenid())
                 .eq(FamilyMember::getStatus, "active"));
-        return Map.of(
-                "familyName", f == null ? "" : f.getName(),
-                "inviterNickname", inviter == null ? "" : inviter.getNickname(),
-                "inviterAvatar", inviter == null || inviter.getAvatar() == null ? "" : inviter.getAvatar(),
-                "status", inv.getStatus());
+
+        // 基于请求 JWT 的 openid 判断当前用户申请状态（三态分流）
+        String openid = UserContext.get();
+        boolean applied = false;
+        String applicationStatus = "none";
+        if (openid != null) {
+            FamilyMember me = memberMapper.selectOne(Wrappers.<FamilyMember>lambdaQuery()
+                    .eq(FamilyMember::getFamilyId, inv.getFamilyId())
+                    .eq(FamilyMember::getOpenid, openid));
+            if (me != null) {
+                String st = me.getStatus();
+                if ("pending".equals(st) || "active".equals(st) || "rejected".equals(st)) {
+                    applied = true;
+                    applicationStatus = "active".equals(st) ? "approved"
+                                    : "rejected".equals(st) ? "rejected" : "pending";
+                }
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("familyName", f == null ? "" : f.getName());
+        result.put("inviterNickname", inviter == null ? "" : inviter.getNickname());
+        result.put("inviterAvatar", inviter == null || inviter.getAvatar() == null ? "" : inviter.getAvatar());
+        result.put("status", inv.getStatus());
+        result.put("familyId", inv.getFamilyId());
+        result.put("applied", applied);
+        result.put("applicationStatus", applicationStatus);
+        return result;
     }
 
     @Transactional
