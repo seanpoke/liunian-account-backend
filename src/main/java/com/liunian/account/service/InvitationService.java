@@ -42,14 +42,12 @@ public class InvitationService {
 
     private final int maxMembers;
     private final int expireHours;
-    private final int blockHours;
 
     public InvitationService(InvitationMapper invitationMapper, FamilyMemberMapper memberMapper,
                              FamilyMapper familyMapper, UserMapper userMapper,
                              FamilyMemberService memberService, WxService wxService, WxProperties wx,
                              @Value("${invite.max-members:10}") int maxMembers,
-                             @Value("${invite.expire-hours:168}") int expireHours,
-                             @Value("${invite.block-hours:24}") int blockHours) {
+                             @Value("${invite.expire-hours:168}") int expireHours) {
         this.invitationMapper = invitationMapper;
         this.memberMapper = memberMapper;
         this.familyMapper = familyMapper;
@@ -59,7 +57,6 @@ public class InvitationService {
         this.wx = wx;
         this.maxMembers = maxMembers;
         this.expireHours = expireHours;
-        this.blockHours = blockHours;
     }
 
     @Transactional
@@ -140,15 +137,6 @@ public class InvitationService {
         Invitation inv = invitationMapper.selectOne(Wrappers.<Invitation>lambdaQuery().eq(Invitation::getToken, token));
         if (inv == null || inv.getUsed() == 1 || !"pending".equals(inv.getStatus()) || inv.getExpireAt().isBefore(LocalDateTime.now())) {
             throw new BizException(ErrorCode.GONE, "邀请已失效");
-        }
-        // 防骚扰：曾被拒绝且在拉黑窗口内
-        long blocked = invitationMapper.selectCount(Wrappers.<Invitation>lambdaQuery()
-                .eq(Invitation::getFamilyId, inv.getFamilyId())
-                .eq(Invitation::getApplicantOpenid, openid)
-                .eq(Invitation::getStatus, "rejected")
-                .ge(Invitation::getReviewedAt, LocalDateTime.now().minusHours(blockHours)));
-        if (blocked > 0) {
-            throw new BizException(ErrorCode.CONFLICT, "申请被拒，请稍后再试");
         }
         FamilyMember dup = memberMapper.selectOne(Wrappers.<FamilyMember>lambdaQuery()
                 .eq(FamilyMember::getFamilyId, inv.getFamilyId())
