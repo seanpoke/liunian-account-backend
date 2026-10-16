@@ -1,0 +1,1 @@
+org.springframework.context.ApplicationContextInitializer=com.liunian.account.config.DotEnvInitializer

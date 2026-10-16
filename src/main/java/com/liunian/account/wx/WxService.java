@@ -15,7 +15,10 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -112,6 +115,46 @@ public class WxService {
         } catch (RestClientException e) {
             log.error("[Wx] 生成小程序码网络异常 scene={}", scene, e);
             throw new BizException(ErrorCode.INTERNAL, "生成小程序码异常:" + e.getMessage());
+        }
+    }
+
+    /**
+     * 生成小程序 URL Link（可在微信外浏览器打开的真实邀请链接）。
+     * 文档：https://developers.weixin.qq.com/miniprogram/dev/api-backend/open-api/url-link/urllink.generateUrlLink.html
+     */
+    public String generateUrlLink(String pagePath, String query, LocalDateTime expireAt) {
+        String token = tokenManager.getToken();
+        String url = "https://api.weixin.qq.com/wxa/generate_urllink?access_token=" + token;
+        long days = 30;
+        try {
+            long d = Duration.between(LocalDateTime.now(), expireAt).toDays();
+            days = Math.max(1, Math.min(30, d));
+        } catch (Exception ignored) {
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("path", pagePath);
+        if (query != null && !query.isEmpty()) {
+            body.put("query", query);
+        }
+        body.put("expire_type", 0);
+        body.put("expire_interval", (int) days);
+        body.put("env_version", wx.getEnvVersion());
+        try {
+            String resp = rt.postForObject(url, jsonEntity(body), String.class);
+            JsonNode n = om.readTree(resp);
+            if (n.has("errcode") && n.get("errcode").asInt() != 0) {
+                throw new BizException(ErrorCode.INTERNAL, "微信生成URLLink失败:" + resp);
+            }
+            return n.get("url_link").asText();
+        } catch (HttpStatusCodeException e) {
+            log.error("[Wx] 生成URLLink失败 status={} body={}", e.getStatusCode(), e.getResponseBodyAsString());
+            throw new BizException(ErrorCode.INTERNAL, "生成URLLink异常:" + e.getMessage());
+        } catch (RestClientException e) {
+            log.error("[Wx] 生成URLLink网络异常", e);
+            throw new BizException(ErrorCode.INTERNAL, "生成URLLink异常:" + e.getMessage());
+        } catch (Exception e) {
+            log.error("[Wx] 生成URLLink解析失败", e);
+            throw new BizException(ErrorCode.INTERNAL, "生成URLLink失败:" + e.getMessage());
         }
     }
 

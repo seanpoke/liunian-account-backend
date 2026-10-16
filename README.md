@@ -16,7 +16,7 @@ Spring Boot 3.3 (JDK 17) + MyBatis-Plus + MySQL 8 + Redis。提供 REST JSON 接
    ```
    服务监听 `http://127.0.0.1:8445/api`，健康检查 `GET /api/health`。
 
-> 也可在 IDE 中直接 Run `AccountApplication`，但需自行把 `ci/.env` 的变量配到 Run Configuration 的环境变量里。
+> 也可在 IDE 中直接 Run `AccountApplication`：程序启动时会自动读取项目根目录的 `ci/.env` 并注入环境变量（最低优先级，不覆盖系统环境变量），只要工作目录是项目根目录即可，无需再手动配 Run Configuration。若 `ci/.env` 不在默认位置，可用 `-Denv.file=路径` 指定。
 
 ## 本地联调（mock 模式）
 `ci/.env` 中 `WX_MOCK=true` 时，`/login` 的 `code` 写成 `mock:<openid>` 即可直接换为该 openid 的 token，
