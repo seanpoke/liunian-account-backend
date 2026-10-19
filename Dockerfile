@@ -32,11 +32,10 @@ RUN mkdir -p /app/logs /app/data/upload && chown -R appuser:appgroup /app
 # 切换到非 root 用户
 USER appuser
 
-# 监听端口由运行时环境变量 SERVER_PORT 决定（dev compose 用 8666，本地默认 8445）。
-# 刻意不写 EXPOSE：镜像不应假定端口，否则 docker ps 会显示与实际监听不一致的端口。
+# 设置 JVM 参数
 ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/logs/heapdump.hprof -Duser.timezone=Asia/Shanghai -Dapp.time-zone=Asia/Shanghai"
 
-# 健康检查：跟随 SERVER_PORT（未设置时回落到 application.yml 的默认 8445）
+# 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider "http://localhost:${SERVER_PORT:-8445}/api/health" || exit 1
 
