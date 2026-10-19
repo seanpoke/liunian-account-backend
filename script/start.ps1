@@ -7,6 +7,9 @@
 # Kills any process already bound to 8445, then starts the app in the background
 # and polls /health until it is UP. Logs go to log/boot.log / log/boot.err.
 # Usage: powershell -ExecutionPolicy Bypass -File script/start.ps1
+#
+# NOTE: keep this file ASCII-only. Windows PowerShell 5.1 reads BOM-less scripts as
+# ANSI; non-ASCII text (e.g. Chinese) gets garbled and can even break quoting.
 
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -40,6 +43,15 @@ Get-ChildItem env: | Where-Object { $_.Name -like "SPRING_*" } | ForEach-Object 
     Remove-Item ("env:" + $_.Name)
 }
 
+# DB env guard: dev/test may ONLY connect to liunian_account_dev.
+# liunian_account is the production database (real users) - never touch it here.
+$expectedDb = "liunian_account_dev"
+if (-not $env:MYSQL_DB) { $env:MYSQL_DB = $expectedDb }
+if ($env:MYSQL_DB -ne $expectedDb) {
+    Write-Host ("[DB-GUARD] MYSQL_DB=" + $env:MYSQL_DB + " but dev requires " + $expectedDb + ". Startup refused.") -ForegroundColor Red
+    exit 1
+}
+
 $env:JAVA_HOME = "E:\JDK\jdk-17.0.19"
 $env:user_timezone = "Asia/Shanghai"
 $env:file_encoding = "UTF-8"
@@ -47,6 +59,7 @@ $env:SERVER_PORT = "8445"
 
 Write-Host "JAVA_HOME = $env:JAVA_HOME" -ForegroundColor Cyan
 Write-Host "SERVER_PORT = 8445" -ForegroundColor Cyan
+Write-Host ("MYSQL_DB = " + $env:MYSQL_DB + "  (DEV)") -ForegroundColor Cyan
 Write-Host "WX_MOCK = $env:WX_MOCK  MYSQL_HOST = $env:MYSQL_HOST  REDIS_HOST = $env:REDIS_HOST" -ForegroundColor Cyan
 Write-Host "Starting liunian-account-backend ..." -ForegroundColor Green
 

@@ -1,21 +1,30 @@
-# 流年小账后端一键冒烟（依赖 WX_MOCK=true，本地 8445）
+# Quick happy-path smoke test (ASCII only).
+# Requires a running service with WX_MOCK=true. Default base: http://127.0.0.1:8445/api
+# Override with $env:API_BASE. For full coverage use script/run_smoke.ps1.
+
 $ErrorActionPreference = "Stop"
-$base = "http://127.0.0.1:8445/api"
+$base = if ($env:API_BASE) { $env:API_BASE } else { "http://127.0.0.1:8445/api" }
+$script:pass = 0
+$script:fail = 0
 
 function Call($method, $path, $token, $body) {
     $hdrs = @{}
     if ($token) { $hdrs["Authorization"] = "Bearer $token" }
     $hdrs["Content-Type"] = "application/json"
-    $json = if ($body) { $body | ConvertTo-Json -Compress } else { $null }
+    $json = if ($null -ne $body) { $body | ConvertTo-Json -Compress } else { $null }
     try {
-        $r = Invoke-RestMethod -Method $method -Uri ($base + $path) -Headers $hdrs -Body $json
-        return $r
+        return (Invoke-RestMethod -Method $method -Uri ($base + $path) -Headers $hdrs -Body $json)
     } catch {
         $msg = $_.ErrorDetails.Message
         if (-not $msg) { $msg = $_.Exception.Message }
-        Write-Host "  [FAIL] $method $path -> $msg" -ForegroundColor Red
+        Write-Host "  [HTTP ERR] $method $path -> $msg" -ForegroundColor Red
         return $null
     }
+}
+
+function Check($name, $cond, $detail = "") {
+    if ($cond) { $script:pass++; Write-Host ("  [PASS] " + $name + " " + $detail) }
+    else { $script:fail++; Write-Host ("  [FAIL] " + $name + " " + $detail) -ForegroundColor Red }
 }
 
 function Token($code) {
@@ -24,56 +33,60 @@ function Token($code) {
     return $null
 }
 
-Write-Host "== 流年小账冒烟 start ==" -ForegroundColor Cyan
+Write-Host "== quick smoke start base=$base ==" -ForegroundColor Cyan
 
-# 每次用带时间戳的唯一 openid，避免单家庭约束导致重复执行时建家庭被拒
 $ts = (Get-Date).ToString("yyyyMMddHHmmssfff")
-$ownerCode = ("mock:owner_" + $ts)
-$memberCode = ("mock:member_" + $ts)
+$owner = Token ("mock:owner_" + $ts)
+$member = Token ("mock:member_" + $ts)
+Check "owner login" ($null -ne $owner)
+Check "member login" ($null -ne $member)
 
-# 1. 创建者登录 + 建家庭
-$owner = Token $ownerCode
-Write-Host "owner token: $($owner.Substring(0,12))..." -ForegroundColor DarkGray
-$f = Call POST "/family" $owner @{ name = "流年小账" }
-$familyId = $f.data.familyId
-Write-Host "family created: $familyId" -ForegroundColor Green
+$f = Call POST "/family" $owner @{ name = "smoke_$ts" }
+$familyId = if ($f -and $f.data) { [long]$f.data.familyId } else { 0 }
+Check "family create" ($familyId -gt 0) ("familyId=" + $familyId)
 
-# 2. 查家庭
-Call GET "/family/$familyId" $owner | Out-Null
-
-# 3. 创建者生成邀请
 $inv = Call POST "/invitation" $owner @{ familyId = $familyId; type = "share" }
-$token = $inv.data.token
-Write-Host "invite token: $token" -ForegroundColor Green
+$token = if ($inv -and $inv.data) { $inv.data.token } else { $null }
+Check "invitation create" ($null -ne $token)
 
-# 4. 校验邀请（公开，无账目）
-Call GET "/invitation/$token" $null | Out-Null
+$pub = Call GET "/invitation/$token" $null $null
+Check "invitation public view" ($pub -and $pub.code -eq 0 -and $pub.data.status -eq "active")
 
-# 5. 成员登录 + 申请
-$member = Token $memberCode
 $apply = Call POST "/invitation/$token/apply" $member @{ nickname = "小明"; avatar = "http://x/a.png" }
-Write-Host "apply status: $($apply.data.status)" -ForegroundColor Green
+Check "apply" ($apply -and $apply.data.status -eq "pending")
 
-# 6. 创建者看待审批 + 同意
-$pending = Call GET "/family/$familyId/pending" $owner
-$memberId = $pending.data[0].memberId
-Call POST "/family/$familyId/member/$memberId/approve" $owner | Out-Null
-Write-Host "approved member: $memberId" -ForegroundColor Green
+$pending = Call GET "/family/$familyId/join-requests" $owner
+$requestId = if ($pending -and @($pending.data).Count -eq 1) { [long]$pending.data[0].requestId } else { 0 }
+Check "pending list" ($requestId -gt 0) ("requestId=" + $requestId)
 
-# 7. 成员记账（categoryId 现为主键自增 Long，先取一个有效分类 id）
+$ap = Call POST "/family/$familyId/join-request/$requestId/approve" $owner $null
+Check "approve" ($ap -and $ap.code -eq 0)
+
 $cats = Call GET "/categories?familyId=$familyId&type=expense" $member
-$catId = $cats.data[0].id
-$tx = Call POST "/transaction" $member @{ type = "expense"; amount = 3500; categoryId = $catId; date = (Get-Date -Format "yyyy-MM-dd"); note = "午饭" }
-Write-Host "transaction: $($tx.data.id) (categoryId=$catId)" -ForegroundColor Green
+$catId = if ($cats -and @($cats.data).Count -gt 0) { $cats.data[0].id } else { $null }
+Check "categories" ($null -ne $catId)
 
-# 8. 成员查明细 + 统计 + 分类 + 预算
-Call GET "/transactions" $member | Out-Null
-Call GET "/stats?period=month" $member | Out-Null
-Call GET "/categories?familyId=$familyId&type=expense" $member | Out-Null
-Call PUT "/budget" $owner @{ familyId = $familyId; amount = 300000 } | Out-Null
-Call GET "/budget?familyId=$familyId" $owner | Out-Null
+$tx = Call POST "/transaction" $member @{ familyId = $familyId; type = "expense"; amount = 3500; categoryId = $catId; date = (Get-Date -Format "yyyy-MM-dd"); note = "午饭" }
+$txId = if ($tx -and $tx.data) { [long]$tx.data.id } else { 0 }
+Check "transaction create" ($txId -gt 0) ("id=" + $txId)
 
-# 9. 隐私授权
-Call POST "/user/privacy" $owner @{ agreed = $true } | Out-Null
+$list = Call GET "/transactions?familyId=$familyId" $member
+Check "transactions list" ($list -and [int]$list.data.total -ge 1)
+$stats = Call GET "/stats?familyId=$familyId&period=month" $member
+Check "stats" ($stats -and [int64]$stats.data.expense -ge 3500) ("expense=" + $stats.data.expense)
 
-Write-Host "== 冒烟完成（FAIL 行已标红，无 FAIL 即通过）==" -ForegroundColor Cyan
+$bud = Call PUT "/budget" $owner @{ familyId = $familyId; amount = 300000 }
+Check "budget put" ($bud -and $bud.code -eq 0)
+$budGet = Call GET "/budget?familyId=$familyId" $owner
+Check "budget get" ($budGet -and $budGet.data.amount -eq 300000)
+
+$pr = Call POST "/user/privacy" $owner @{ agreed = $true }
+Check "privacy agree" ($pr -and $pr.code -eq 0)
+
+$me = Call GET "/user/me" $owner
+Check "user me" ($me -and $me.code -eq 0 -and $me.data.privacyAgreed -eq $true)
+
+# cleanup
+Call POST "/family/$familyId/dissolve" $owner $null | Out-Null
+Write-Host "== quick smoke done: PASS=$($script:pass) FAIL=$($script:fail) ==" -ForegroundColor Cyan
+if ($script:fail -gt 0) { exit 1 } else { exit 0 }

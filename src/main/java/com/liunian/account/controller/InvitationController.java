@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -31,6 +30,9 @@ public class InvitationController {
     public record RevokeReq(@NotBlank String token) {
     }
 
+    /**
+     * 创建邀请：若本家庭存在未过期且剩余有效期 ≥ 6 小时的邀请则直接复用，否则新建（有效期 24 小时）。
+     */
     @PostMapping("/invitation")
     public R<Map<String, Object>> create(@RequestBody CreateReq req) {
         return R.ok(invitationService.create(UserContext.get(), req.familyId(), req.type()));
@@ -49,23 +51,6 @@ public class InvitationController {
     @PostMapping("/invitation/revoke")
     public R<Void> revoke(@RequestBody RevokeReq req) {
         invitationService.revoke(UserContext.get(), req.token());
-        return R.ok();
-    }
-
-    @GetMapping("/family/{familyId}/pending")
-    public R<List<Map<String, Object>>> pending(@PathVariable Long familyId) {
-        return R.ok(invitationService.pending(UserContext.get(), familyId));
-    }
-
-    @PostMapping("/family/{familyId}/member/{memberId}/approve")
-    public R<Void> approve(@PathVariable Long familyId, @PathVariable Long memberId) {
-        invitationService.approve(UserContext.get(), familyId, memberId);
-        return R.ok();
-    }
-
-    @PostMapping("/family/{familyId}/member/{memberId}/reject")
-    public R<Void> reject(@PathVariable Long familyId, @PathVariable Long memberId) {
-        invitationService.reject(UserContext.get(), familyId, memberId);
         return R.ok();
     }
 }

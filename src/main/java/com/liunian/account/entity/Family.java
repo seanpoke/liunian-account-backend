@@ -18,7 +18,6 @@ public class Family {
     private String creatorOpenid;
     private String currency;
     private String avatar;
-    private Integer memberCount;
     private String status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

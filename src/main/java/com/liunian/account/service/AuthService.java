@@ -3,7 +3,7 @@ package com.liunian.account.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.liunian.account.common.BizException;
 import com.liunian.account.common.ErrorCode;
-import com.liunian.account.config.WxProperties;
+import com.liunian.account.common.TimeSupport;
 import com.liunian.account.entity.FamilyMember;
 import com.liunian.account.entity.User;
 import com.liunian.account.mapper.FamilyMemberMapper;
@@ -16,7 +16,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class AuthService {
@@ -27,23 +27,28 @@ public class AuthService {
     private final FamilyMemberMapper memberMapper;
     private final JwtUtil jwtUtil;
     private final StringRedisTemplate redis;
-    private final WxProperties wx;
     private final WxService wxService;
 
     public AuthService(UserMapper userMapper, FamilyMemberMapper memberMapper, JwtUtil jwtUtil,
-                       StringRedisTemplate redis, WxProperties wx, WxService wxService) {
+                       StringRedisTemplate redis, WxService wxService) {
         this.userMapper = userMapper;
         this.memberMapper = memberMapper;
         this.jwtUtil = jwtUtil;
         this.redis = redis;
-        this.wx = wx;
         this.wxService = wxService;
     }
 
-    public record LoginResult(String token, String openid, boolean isMember, Long familyId) {
+    public record LoginResult(String token, String openid, boolean isMember, Long familyId, boolean privacyAgreed) {
     }
 
+    /**
+     * 微信登录：code2Session 换 openid → upsert user（昵称/头像以最新授权值为准）→ 签发 JWT。
+     * 返回 privacyAgreed 供小程序首次进入时决定是否弹隐私授权，省掉一次额外请求。
+     */
     public LoginResult login(String code, String unionid, String nickname, String avatar) {
+        if (code == null || code.isBlank()) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "code 不能为空");
+        }
         String openid = wxService.code2Session(code);
         if (openid == null || openid.isBlank()) {
             throw new BizException(ErrorCode.UNAUTHORIZED, "获取 openid 失败");
@@ -55,24 +60,25 @@ public class AuthService {
             user.setUnionid(unionid);
             user.setNickname(nickname);
             user.setAvatar(avatar);
-            user.setCreatedAt(LocalDateTime.now());
+            user.setCreatedAt(TimeSupport.now());
+            user.setUpdatedAt(TimeSupport.now());
             userMapper.insert(user);
         } else {
             boolean changed = false;
-            if (nickname != null && !nickname.equals(user.getNickname())) {
+            if (nickname != null && !nickname.isBlank() && !nickname.equals(user.getNickname())) {
                 user.setNickname(nickname);
                 changed = true;
             }
-            if (avatar != null && !avatar.equals(user.getAvatar())) {
+            if (avatar != null && !avatar.isBlank() && !avatar.equals(user.getAvatar())) {
                 user.setAvatar(avatar);
                 changed = true;
             }
-            if (unionid != null && !unionid.equals(user.getUnionid())) {
+            if (unionid != null && !unionid.isBlank() && !unionid.equals(user.getUnionid())) {
                 user.setUnionid(unionid);
                 changed = true;
             }
             if (changed) {
-                user.setUpdatedAt(LocalDateTime.now());
+                user.setUpdatedAt(TimeSupport.now());
                 userMapper.updateById(user);
             }
         }
@@ -81,12 +87,14 @@ public class AuthService {
         String jti = jwtUtil.jti(token);
         redis.opsForValue().set("auth:jti:" + jti, openid, Duration.ofHours(jwtUtil.getExpireHours()));
 
-        FamilyMember member = memberMapper.selectOne(Wrappers.<FamilyMember>lambdaQuery()
+        // 允许多家庭：取最早加入的家庭作为默认家庭，不能再用 selectOne（多家庭会抛 TooManyResults）
+        List<FamilyMember> members = memberMapper.selectList(Wrappers.<FamilyMember>lambdaQuery()
                 .eq(FamilyMember::getOpenid, openid)
-                .in(FamilyMember::getStatus, "active", "pending"));
-        boolean isMember = member != null;
-        Long familyId = isMember ? member.getFamilyId() : null;
-        log.info("[LOGIN] openid={} isMember={} familyId={}", openid, isMember, familyId);
-        return new LoginResult(token, openid, isMember, familyId);
+                .orderByAsc(FamilyMember::getJoinedAt));
+        boolean isMember = !members.isEmpty();
+        Long familyId = isMember ? members.get(0).getFamilyId() : null;
+        boolean privacyAgreed = user.getPrivacyAgreedAt() != null;
+        log.info("[LOGIN] openid={} isMember={} familyId={} privacyAgreed={}", openid, isMember, familyId, privacyAgreed);
+        return new LoginResult(token, openid, isMember, familyId, privacyAgreed);
     }
 }

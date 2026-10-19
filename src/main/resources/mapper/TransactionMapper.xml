@@ -3,9 +3,11 @@
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.liunian.account.mapper.TransactionMapper">
 
+    <!-- 统计口径：只统计有效流水（status=1）；成员退出/被移除的流水会被置为 0 -->
     <sql id="dateRange">
         <where>
             family_id = #{familyId}
+            AND status = 1
             <if test="start != null">AND date &gt;= #{start}</if>
             <if test="end != null">AND date &lt;= #{end}</if>
             <if test="openid != null and openid != ''">AND openid = #{openid}</if>
@@ -24,6 +26,7 @@
         SELECT category_name AS name, COALESCE(SUM(amount), 0) AS amount
         FROM transaction
         WHERE family_id = #{familyId}
+        AND status = 1
         <if test="start != null">AND date &gt;= #{start}</if>
         <if test="end != null">AND date &lt;= #{end}</if>
         AND type = 'expense'
@@ -41,16 +44,22 @@
         ORDER BY date ASC
     </select>
 
+    <!--
+      成员维度统计：family_member 只保留真实成员，成员被移除后行会消失，
+      因此昵称优先取家庭内显示名，缺失时回退 user 表的全局昵称。
+    -->
     <select id="byMember" resultType="java.util.HashMap">
         SELECT t.openid,
-               m.nickname AS nickname,
+               COALESCE(m.nickname, u.nickname, '') AS nickname,
                COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS amount
         FROM transaction t
-        LEFT JOIN family_member m ON m.family_id = t.family_id AND m.openid = t.openid AND m.status = 'active'
+        LEFT JOIN family_member m ON m.family_id = t.family_id AND m.openid = t.openid
+        LEFT JOIN `user` u ON u.openid = t.openid
         WHERE t.family_id = #{familyId}
+        AND t.status = 1
         <if test="start != null">AND t.date &gt;= #{start}</if>
         <if test="end != null">AND t.date &lt;= #{end}</if>
-        GROUP BY t.openid, m.nickname
+        GROUP BY t.openid, COALESCE(m.nickname, u.nickname, '')
         ORDER BY amount DESC
     </select>
 

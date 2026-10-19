@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.liunian.account.common.BizException;
 import com.liunian.account.common.ErrorCode;
+import com.liunian.account.common.TimeSupport;
 import com.liunian.account.config.WxProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -127,7 +128,7 @@ public class WxService {
         String url = "https://api.weixin.qq.com/wxa/generate_urllink?access_token=" + token;
         long days = 30;
         try {
-            long d = Duration.between(LocalDateTime.now(), expireAt).toDays();
+            long d = Duration.between(TimeSupport.now(), expireAt).toDays();
             days = Math.max(1, Math.min(30, d));
         } catch (Exception ignored) {
         }

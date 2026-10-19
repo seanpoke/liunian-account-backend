@@ -5,17 +5,22 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.liunian.account.common.BizException;
 import com.liunian.account.common.ErrorCode;
+import com.liunian.account.common.TimeSupport;
 import com.liunian.account.entity.Category;
 import com.liunian.account.entity.FamilyMember;
 import com.liunian.account.entity.TransactionRecord;
+import com.liunian.account.entity.User;
 import com.liunian.account.mapper.CategoryMapper;
 import com.liunian.account.mapper.FamilyMemberMapper;
 import com.liunian.account.mapper.TransactionMapper;
+import com.liunian.account.mapper.UserMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,18 +30,20 @@ public class TransactionService {
     private final TransactionMapper transactionMapper;
     private final FamilyMemberMapper memberMapper;
     private final CategoryMapper categoryMapper;
+    private final UserMapper userMapper;
 
-    public TransactionService(TransactionMapper transactionMapper, FamilyMemberMapper memberMapper, CategoryMapper categoryMapper) {
+    public TransactionService(TransactionMapper transactionMapper, FamilyMemberMapper memberMapper,
+                              CategoryMapper categoryMapper, UserMapper userMapper) {
         this.transactionMapper = transactionMapper;
         this.memberMapper = memberMapper;
         this.categoryMapper = categoryMapper;
+        this.userMapper = userMapper;
     }
 
     private FamilyMember requireMemberOfFamily(String openid, Long familyId) {
         FamilyMember m = memberMapper.selectOne(Wrappers.<FamilyMember>lambdaQuery()
                 .eq(FamilyMember::getOpenid, openid)
-                .eq(FamilyMember::getFamilyId, familyId)
-                .eq(FamilyMember::getStatus, "active"));
+                .eq(FamilyMember::getFamilyId, familyId));
         if (m == null) {
             throw new BizException(ErrorCode.FORBIDDEN, "非家庭成员");
         }
@@ -62,7 +69,10 @@ public class TransactionService {
     @Transactional
     public Long create(String openid, Long familyId, String type, Integer amount,
                        Long categoryId, LocalDate date, String note, List<String> images) {
-        FamilyMember me = requireMemberOfFamily(openid, familyId);
+        if (familyId == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "familyId 必填");
+        }
+        requireMemberOfFamily(openid, familyId);
         if (!"income".equals(type) && !"expense".equals(type)) {
             throw new BizException(ErrorCode.BAD_REQUEST, "type 必须是 income/expense");
         }
@@ -80,8 +90,9 @@ public class TransactionService {
         tx.setDate(date);
         tx.setNote(note);
         tx.setImages(images);
-        tx.setCreatedAt(LocalDateTime.now());
-        tx.setUpdatedAt(LocalDateTime.now());
+        tx.setStatus(TransactionRecord.STATUS_VALID);
+        tx.setCreatedAt(TimeSupport.now());
+        tx.setUpdatedAt(TimeSupport.now());
         fillCategory(tx, categoryId);
         transactionMapper.insert(tx);
         return tx.getId();
@@ -90,10 +101,7 @@ public class TransactionService {
     @Transactional
     public void update(String openid, Long id, String type, Integer amount,
                        Long categoryId, LocalDate date, String note, List<String> images) {
-        TransactionRecord tx = transactionMapper.selectById(id);
-        if (tx == null) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "记录不存在");
-        }
+        TransactionRecord tx = requireValid(id);
         FamilyMember m = requireMemberOfFamily(openid, tx.getFamilyId());
         if (!"owner".equals(m.getRole()) && !openid.equals(tx.getOpenid())) {
             throw new BizException(ErrorCode.FORBIDDEN, "无权修改他人记录");
@@ -112,7 +120,7 @@ public class TransactionService {
         if (date != null) tx.setDate(date);
         if (note != null) tx.setNote(note);
         if (images != null) tx.setImages(images);
-        tx.setUpdatedAt(LocalDateTime.now());
+        tx.setUpdatedAt(TimeSupport.now());
         transactionMapper.updateById(tx);
     }
 
@@ -129,8 +137,34 @@ public class TransactionService {
         transactionMapper.deleteById(id);
     }
 
+    /**
+     * 成员退出/被移除时，把其在该家庭的流水批量置为「已作废」。
+     * 不物理删除：保留审计痕迹，但所有查询与统计默认只看有效流水。
+     *
+     * @param reason member_quit / member_removed
+     */
+    @Transactional
+    public void voidByMember(Long familyId, String openid, String reason, String operator) {
+        transactionMapper.update(null, Wrappers.<TransactionRecord>lambdaUpdate()
+                .eq(TransactionRecord::getFamilyId, familyId)
+                .eq(TransactionRecord::getOpenid, openid)
+                .eq(TransactionRecord::getStatus, TransactionRecord.STATUS_VALID)
+                .set(TransactionRecord::getStatus, TransactionRecord.STATUS_VOID)
+                .set(TransactionRecord::getVoidedAt, TimeSupport.now())
+                .set(TransactionRecord::getVoidReason, reason)
+                .set(TransactionRecord::getVoidedBy, operator));
+    }
+
+    private TransactionRecord requireValid(Long id) {
+        TransactionRecord tx = transactionMapper.selectById(id);
+        if (tx == null || (tx.getStatus() != null && tx.getStatus() == TransactionRecord.STATUS_VOID)) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "记录不存在");
+        }
+        return tx;
+    }
+
     private Map<String, Object> toVo(TransactionRecord tx, String nickname) {
-        Map<String, Object> m = new java.util.HashMap<>();
+        Map<String, Object> m = new HashMap<>();
         m.put("id", tx.getId());
         m.put("familyId", tx.getFamilyId());
         m.put("openid", tx.getOpenid());
@@ -149,22 +183,44 @@ public class TransactionService {
         return m;
     }
 
-    public Map<String, Object> get(String openid, Long id) {
-        TransactionRecord tx = transactionMapper.selectById(id);
-        if (tx == null) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "记录不存在");
+    /**
+     * 昵称解析：家庭内显示名优先，缺失时回退 user 表（成员被移除后历史账单仍可显示昵称）。
+     */
+    private Map<String, String> nicknameMap(Long familyId, Collection<String> openids) {
+        Map<String, String> map = new HashMap<>();
+        if (openids == null || openids.isEmpty()) {
+            return map;
         }
+        List<User> users = userMapper.selectList(Wrappers.<User>lambdaQuery().in(User::getOpenid, openids));
+        for (User u : users) {
+            if (u.getNickname() != null) {
+                map.put(u.getOpenid(), u.getNickname());
+            }
+        }
+        List<FamilyMember> members = memberMapper.selectList(Wrappers.<FamilyMember>lambdaQuery()
+                .eq(FamilyMember::getFamilyId, familyId)
+                .in(FamilyMember::getOpenid, openids));
+        for (FamilyMember m : members) {
+            if (m.getNickname() != null) {
+                map.put(m.getOpenid(), m.getNickname());
+            }
+        }
+        return map;
+    }
+
+    public Map<String, Object> get(String openid, Long id) {
+        TransactionRecord tx = requireValid(id);
         requireMemberOfFamily(openid, tx.getFamilyId());
-        FamilyMember m = memberMapper.selectOne(Wrappers.<FamilyMember>lambdaQuery()
-                .eq(FamilyMember::getFamilyId, tx.getFamilyId()).eq(FamilyMember::getOpenid, tx.getOpenid()).eq(FamilyMember::getStatus, "active"));
-        return toVo(tx, m == null ? null : m.getNickname());
+        Map<String, String> nick = nicknameMap(tx.getFamilyId(), List.of(tx.getOpenid()));
+        return toVo(tx, nick.get(tx.getOpenid()));
     }
 
     public Map<String, Object> list(String openid, Long familyId, LocalDate start, LocalDate end,
                                     String member, String type, Long category, long page, long size) {
         requireMemberOfFamily(openid, familyId);
         com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TransactionRecord> q = Wrappers.lambdaQuery(TransactionRecord.class)
-                .eq(TransactionRecord::getFamilyId, familyId);
+                .eq(TransactionRecord::getFamilyId, familyId)
+                .eq(TransactionRecord::getStatus, TransactionRecord.STATUS_VALID);
         if (start != null) q.ge(TransactionRecord::getDate, start);
         if (end != null) q.le(TransactionRecord::getDate, end);
         if (member != null) q.eq(TransactionRecord::getOpenid, member);
@@ -173,10 +229,8 @@ public class TransactionService {
         q.orderByDesc(TransactionRecord::getDate).orderByDesc(TransactionRecord::getCreatedAt);
 
         IPage<TransactionRecord> p = transactionMapper.selectPage(new Page<>(page, size), q);
-        List<FamilyMember> members = memberMapper.selectList(Wrappers.<FamilyMember>lambdaQuery()
-                .eq(FamilyMember::getFamilyId, familyId).eq(FamilyMember::getStatus, "active"));
-        Map<String, String> nickMap = members.stream()
-                .collect(java.util.stream.Collectors.toMap(FamilyMember::getOpenid, FamilyMember::getNickname, (a, b) -> a));
+        List<String> openids = p.getRecords().stream().map(TransactionRecord::getOpenid).distinct().toList();
+        Map<String, String> nickMap = nicknameMap(familyId, openids);
         List<Map<String, Object>> list = p.getRecords().stream()
                 .map(tx -> toVo(tx, nickMap.get(tx.getOpenid()))).toList();
         return Map.of("list", list, "total", p.getTotal());
@@ -186,20 +240,19 @@ public class TransactionService {
     public Map<String, Object> listByDay(String openid, Long familyId, LocalDate start, LocalDate end) {
         requireMemberOfFamily(openid, familyId);
         com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TransactionRecord> q = Wrappers.lambdaQuery(TransactionRecord.class)
-                .eq(TransactionRecord::getFamilyId, familyId);
+                .eq(TransactionRecord::getFamilyId, familyId)
+                .eq(TransactionRecord::getStatus, TransactionRecord.STATUS_VALID);
         if (start != null) q.ge(TransactionRecord::getDate, start);
         if (end != null) q.le(TransactionRecord::getDate, end);
         q.orderByDesc(TransactionRecord::getDate).orderByDesc(TransactionRecord::getCreatedAt);
         List<TransactionRecord> all = transactionMapper.selectList(q);
-        List<FamilyMember> members = memberMapper.selectList(Wrappers.<FamilyMember>lambdaQuery()
-                .eq(FamilyMember::getFamilyId, familyId).eq(FamilyMember::getStatus, "active"));
-        Map<String, String> nickMap = members.stream()
-                .collect(java.util.stream.Collectors.toMap(FamilyMember::getOpenid, FamilyMember::getNickname, (a, b) -> a));
+        List<String> openids = all.stream().map(TransactionRecord::getOpenid).distinct().toList();
+        Map<String, String> nickMap = nicknameMap(familyId, openids);
         Map<LocalDate, List<Map<String, Object>>> grouped = new java.util.LinkedHashMap<>();
         for (TransactionRecord tx : all) {
-            grouped.computeIfAbsent(tx.getDate(), k -> new java.util.ArrayList<>()).add(toVo(tx, nickMap.get(tx.getOpenid())));
+            grouped.computeIfAbsent(tx.getDate(), k -> new ArrayList<>()).add(toVo(tx, nickMap.get(tx.getOpenid())));
         }
-        List<Map<String, Object>> days = new java.util.ArrayList<>();
+        List<Map<String, Object>> days = new ArrayList<>();
         for (Map.Entry<LocalDate, List<Map<String, Object>>> e : grouped.entrySet()) {
             int income = 0, expense = 0;
             for (Map<String, Object> r : e.getValue()) {

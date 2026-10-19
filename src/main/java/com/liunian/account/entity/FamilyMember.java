@@ -7,6 +7,10 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * 家庭成员。表内只保留「真实成员」，不再有 status/source：
+ * 加入申请与审批记录见 {@link JoinRequest}，退出/被移除即物理删除本行。
+ */
 @Data
 @TableName("family_member")
 public class FamilyMember {
@@ -19,8 +23,6 @@ public class FamilyMember {
     private String nickname;
     private String avatar;
     private String role;        // owner / member
-    private String status;      // pending / active / removed
-    private String source;      // invite / self
     private LocalDateTime joinedAt;
     private LocalDateTime updatedAt;
 }

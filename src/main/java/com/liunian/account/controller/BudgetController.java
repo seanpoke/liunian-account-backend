@@ -3,6 +3,7 @@ package com.liunian.account.controller;
 import com.liunian.account.common.R;
 import com.liunian.account.common.BizException;
 import com.liunian.account.common.ErrorCode;
+import com.liunian.account.common.TimeSupport;
 import com.liunian.account.entity.Budget;
 import com.liunian.account.mapper.BudgetMapper;
 import com.liunian.account.security.UserContext;
@@ -15,7 +16,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDateTime;
 import java.util.Map;
 
 @RestController
@@ -34,13 +34,19 @@ public class BudgetController {
 
     @GetMapping("/budget")
     public R<Map<String, Object>> get(@RequestParam Long familyId) {
-        memberService.requireActive(UserContext.get(), familyId);
+        if (familyId == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "familyId 必填");
+        }
+        memberService.requireMember(UserContext.get(), familyId);
         Budget b = budgetMapper.selectOne(Wrappers.<Budget>lambdaQuery().eq(Budget::getFamilyId, familyId));
         return R.ok(Map.of("amount", b == null ? 0 : (b.getAmount() == null ? 0 : b.getAmount())));
     }
 
     @PutMapping("/budget")
     public R<Map<String, Object>> put(@RequestBody PutReq req) {
+        if (req.familyId() == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "familyId 必填");
+        }
         memberService.requireOwner(UserContext.get(), req.familyId());
         if (req.amount() == null || req.amount() < 0) {
             throw new BizException(ErrorCode.BAD_REQUEST, "预算金额无效");
@@ -51,12 +57,12 @@ public class BudgetController {
             b.setFamilyId(req.familyId());
             b.setAmount(req.amount());
             b.setUpdatedBy(UserContext.get());
-            b.setUpdatedAt(LocalDateTime.now());
+            b.setUpdatedAt(TimeSupport.now());
             budgetMapper.insert(b);
         } else {
             existing.setAmount(req.amount());
             existing.setUpdatedBy(UserContext.get());
-            existing.setUpdatedAt(LocalDateTime.now());
+            existing.setUpdatedAt(TimeSupport.now());
             budgetMapper.updateById(existing);
         }
         return R.ok(Map.of("amount", req.amount()));

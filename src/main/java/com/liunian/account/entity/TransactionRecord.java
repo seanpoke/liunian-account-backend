@@ -15,6 +15,10 @@ import java.util.List;
 @TableName(value = "transaction", autoResultMap = true)
 public class TransactionRecord {
 
+    /** 账目状态：1=有效；0=已作废（成员退出/被移除时批量置 0，不参与查询与统计）。 */
+    public static final int STATUS_VALID = 1;
+    public static final int STATUS_VOID = 0;
+
     @TableId(type = IdType.AUTO)
     private Long id;
 
@@ -33,4 +37,9 @@ public class TransactionRecord {
 
     @TableField(typeHandler = JacksonListTypeHandler.class)
     private List<String> images;    // 小票/凭证图地址数组
+
+    private Integer status;
+    private LocalDateTime voidedAt;
+    private String voidReason;
+    private String voidedBy;
 }

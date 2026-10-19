@@ -34,7 +34,10 @@ public class ReminderController {
 
     @GetMapping("/reminder")
     public R<Map<String, Object>> get(@RequestParam Long familyId) {
-        memberService.requireActive(UserContext.get(), familyId);
+        if (familyId == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "familyId 必填");
+        }
+        memberService.requireMember(UserContext.get(), familyId);
         ReminderSetting r = reminderMapper.selectOne(Wrappers.<ReminderSetting>lambdaQuery()
                 .eq(ReminderSetting::getFamilyId, familyId).eq(ReminderSetting::getOpenid, UserContext.get()));
         if (r == null) {
@@ -48,7 +51,10 @@ public class ReminderController {
 
     @PutMapping("/reminder")
     public R<Map<String, Object>> put(@RequestBody PutReq req) {
-        memberService.requireActive(UserContext.get(), req.familyId());
+        if (req.familyId() == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "familyId 必填");
+        }
+        memberService.requireMember(UserContext.get(), req.familyId());
         ReminderSetting r = reminderMapper.selectOne(Wrappers.<ReminderSetting>lambdaQuery()
                 .eq(ReminderSetting::getFamilyId, req.familyId()).eq(ReminderSetting::getOpenid, UserContext.get()));
         if (r == null) {

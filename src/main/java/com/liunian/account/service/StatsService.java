@@ -3,8 +3,8 @@ package com.liunian.account.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.liunian.account.common.BizException;
 import com.liunian.account.common.ErrorCode;
+import com.liunian.account.common.TimeSupport;
 import com.liunian.account.entity.FamilyMember;
-import com.liunian.account.entity.TransactionRecord;
 import com.liunian.account.mapper.FamilyMemberMapper;
 import com.liunian.account.mapper.TransactionMapper;
 import org.springframework.stereotype.Service;
@@ -29,14 +29,13 @@ public class StatsService {
                                      LocalDate start, LocalDate end, String member) {
         FamilyMember me = memberMapper.selectOne(Wrappers.<FamilyMember>lambdaQuery()
                 .eq(FamilyMember::getOpenid, openid)
-                .eq(FamilyMember::getFamilyId, familyId)
-                .eq(FamilyMember::getStatus, "active"));
+                .eq(FamilyMember::getFamilyId, familyId));
         if (me == null) {
             throw new BizException(ErrorCode.FORBIDDEN, "非本家庭成员");
         }
 
         if ("year".equals(period)) {
-            int y = year != null ? year : LocalDate.now().getYear();
+            int y = year != null ? year : TimeSupport.today().getYear();
             start = LocalDate.of(y, 1, 1);
             end = LocalDate.of(y, 12, 31);
         } else if ("custom".equals(period)) {
@@ -44,14 +43,14 @@ public class StatsService {
                 throw new BizException(ErrorCode.BAD_REQUEST, "自定义时段需提供 start/end");
             }
         } else { // month 默认
-            int y = year != null ? year : LocalDate.now().getYear();
-            int m = month != null ? month : LocalDate.now().getMonthValue();
+            int y = year != null ? year : TimeSupport.today().getYear();
+            int m = month != null ? month : TimeSupport.today().getMonthValue();
             YearMonth ym = YearMonth.of(y, m);
             start = ym.atDay(1);
             end = ym.atEndOfMonth();
         }
         if (start == null || end == null) {
-            YearMonth ym = YearMonth.now();
+            YearMonth ym = YearMonth.from(TimeSupport.today());
             start = ym.atDay(1);
             end = ym.atEndOfMonth();
         }

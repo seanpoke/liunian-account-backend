@@ -9,6 +9,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+
+import java.time.format.DateTimeParseException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -33,6 +36,20 @@ public class GlobalExceptionHandler {
         String msg = sb.toString().trim();
         log.warn("[Validation] {} {} -> {}", request.getMethod(), request.getRequestURI(), msg);
         return R.fail(ErrorCode.BAD_REQUEST, msg);
+    }
+
+    /** 日期/时间参数格式错误（如 date=2026/09/28、提醒 time=abc）统一返回 400，而不是 500。 */
+    @ExceptionHandler(DateTimeParseException.class)
+    public R<Void> handleDateParse(DateTimeParseException e, HttpServletRequest request) {
+        log.warn("[BadRequest] {} {} -> {}", request.getMethod(), request.getRequestURI(), e.getMessage());
+        return R.fail(ErrorCode.BAD_REQUEST, "日期/时间格式错误，应为 yyyy-MM-dd 或 HH:mm");
+    }
+
+    /** 查询参数类型错误（如 month=2026-09 但 month 为 Integer）统一返回 400。 */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public R<Void> handleTypeMismatch(MethodArgumentTypeMismatchException e, HttpServletRequest request) {
+        log.warn("[BadRequest] {} {} -> {}={}", request.getMethod(), request.getRequestURI(), e.getName(), e.getValue());
+        return R.fail(ErrorCode.BAD_REQUEST, "参数类型错误: " + e.getName());
     }
 
     @ExceptionHandler(Exception.class)
