@@ -13,10 +13,13 @@
 
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$envFile = Join-Path $PSScriptRoot "..\ci\.env"
+# Preferred location is the project root (.env next to pom.xml / docker-compose.yml).
+# Falls back to the legacy ci/.env so both layouts keep working.
+$envFile = Join-Path $PSScriptRoot "..\.env"
+if (-not (Test-Path $envFile)) { $envFile = Join-Path $PSScriptRoot "..\ci\.env" }
 
 if (-not (Test-Path $envFile)) {
-    Write-Host "ci/.env not found. Copy ci/.env.example to ci/.env and fill in real values." -ForegroundColor Red
+    Write-Host ".env not found. Copy ci/.env.example to .env (project root) and fill in real values." -ForegroundColor Red
     exit 1
 }
 

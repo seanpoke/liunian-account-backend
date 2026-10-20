@@ -14,8 +14,9 @@
 $ErrorActionPreference = 'Stop'
 
 # ---- load ci/.env ----
-$envFile = Join-Path $PSScriptRoot '..\ci\.env'
-if (-not (Test-Path $envFile)) { Write-Host 'ci/.env not found'; exit 1 }
+$envFile = Join-Path $PSScriptRoot '..\.env'
+if (-not (Test-Path $envFile)) { $envFile = Join-Path $PSScriptRoot '..\ci\.env' }
+if (-not (Test-Path $envFile)) { Write-Host '.env not found (project root)'; exit 1 }
 Get-Content $envFile -Encoding UTF8 | ForEach-Object {
     $line = $_.Trim()
     if ($line -eq '' -or $line.StartsWith('#')) { return }

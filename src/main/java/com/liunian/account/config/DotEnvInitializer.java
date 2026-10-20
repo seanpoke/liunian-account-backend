@@ -16,7 +16,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 启动时自动读取 {@code ci/.env} 并把键值注册为最低优先级的属性源。
+ * 启动时自动读取项目根目录的 {@code .env}（与 docker-compose 同级，找不到则回退 {@code ci/.env}），
+ * 并把键值注册为最低优先级的属性源。
  *
  * <p>目的：IDE 直接 Run / {@code java -jar} 时无需手动配置环境变量，本项目约定的
  * {@code WX_APPID / WX_SECRET / JWT_SECRET ...} 即可自动生效。</p>
@@ -28,12 +29,14 @@ import java.util.Map;
  *       docker-compose 的 {@code env_file} / {@code environment} 注入环境变量，互不干扰。</li>
  * </ul>
  *
- * <p>可通过 {@code -Denv.file=路径} 或环境变量 {@code ENV_FILE} 自定义位置，默认 {@code ci/.env}。</p>
+ * <p>可通过 {@code -Denv.file=路径} 或环境变量 {@code ENV_FILE} 自定义位置；
+ * 未指定时按 {@code .env}（项目根）→ {@code ci/.env}（旧位置）的顺序查找。</p>
  */
 public class DotEnvInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
     private static final Logger log = LoggerFactory.getLogger(DotEnvInitializer.class);
-    private static final String DEFAULT_ENV = "ci/.env";
+    /** 默认查找顺序：项目根 .env（与 docker-compose 同级）优先，兼容旧的 ci/.env。 */
+    private static final String[] DEFAULT_ENVS = { ".env", "ci/.env" };
     private static final String PROPERTY_SOURCE_NAME = "ciDotEnv";
 
     @Override
@@ -42,10 +45,9 @@ public class DotEnvInitializer implements ApplicationContextInitializer<Configur
         if (env.getPropertySources().contains(PROPERTY_SOURCE_NAME)) {
             return;
         }
-        String location = env.getProperty("env.file", DEFAULT_ENV);
-        Path path = Paths.get(location);
-        if (!Files.exists(path)) {
-            log.debug("[DotEnv] {} 不存在，跳过（可能运行在 Docker 中，已由 env_file 注入）", path);
+        Path path = resolveEnvFile(env);
+        if (path == null) {
+            log.debug("[DotEnv] 未找到 .env / ci/.env，跳过（可能运行在 Docker 中，已由 env_file 注入）");
             return;
         }
         try {
@@ -79,5 +81,21 @@ public class DotEnvInitializer implements ApplicationContextInitializer<Configur
         } catch (Exception e) {
             log.warn("[DotEnv] 读取 {} 失败，已忽略: {}", path, e.getMessage());
         }
+    }
+
+    /** 显式指定（-Denv.file / ENV_FILE）优先；否则按 .env → ci/.env 顺序取第一个存在的。 */
+    private Path resolveEnvFile(ConfigurableEnvironment env) {
+        String explicit = env.getProperty("env.file");
+        if (explicit != null && !explicit.isBlank()) {
+            Path p = Paths.get(explicit);
+            return Files.exists(p) ? p : null;
+        }
+        for (String candidate : DEFAULT_ENVS) {
+            Path p = Paths.get(candidate);
+            if (Files.exists(p)) {
+                return p;
+            }
+        }
+        return null;
     }
 }

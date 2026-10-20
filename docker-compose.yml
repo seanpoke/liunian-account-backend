@@ -6,7 +6,7 @@ services:
     ports:
       - "${SERVER_PORT:-8445}:${SERVER_PORT:-8445}"
     env_file:
-      - ./ci/.env
+      - ./.env
     environment:
       SERVER_PORT: "${SERVER_PORT:-8445}"
       TZ: Asia/Shanghai
