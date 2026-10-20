@@ -49,12 +49,14 @@ public class UserService {
             u.setCreatedAt(TimeSupport.now());
         }
         boolean nickChanged = nickname != null && !nickname.isBlank();
-        boolean avatarChanged = avatar != null && !avatar.isBlank();
+        // avatar：null=不修改；空字符串=清空头像（存空串，兼容 MyBatis-Plus 忽略 null 的更新策略）
+        boolean avatarChanged = avatar != null;
+        String newAvatar = avatarChanged ? avatar.trim() : null;
         if (nickChanged) {
             u.setNickname(nickname.trim());
         }
         if (avatarChanged) {
-            u.setAvatar(avatar.trim());
+            u.setAvatar(newAvatar);
         }
         u.setUpdatedAt(TimeSupport.now());
         if (u.getId() == null) {
@@ -72,7 +74,7 @@ public class UserService {
             w.set(FamilyMember::getNickname, nickname.trim());
         }
         if (avatarChanged) {
-            w.set(FamilyMember::getAvatar, avatar.trim());
+            w.set(FamilyMember::getAvatar, newAvatar);
         }
         w.set(FamilyMember::getUpdatedAt, TimeSupport.now());
         memberMapper.update(null, w);

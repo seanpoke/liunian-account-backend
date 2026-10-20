@@ -1,7 +1,7 @@
 services:
   app:
     image: ghcr.io/seanpoke/liunian-account-backend:latest
-    container_name: liunian-account-backend
+    container_name: ${CONTAINER_NAME:-liunian-account-backend}
     restart: unless-stopped
     ports:
       - "${SERVER_PORT:-8445}:${SERVER_PORT:-8445}"
@@ -13,14 +13,18 @@ services:
       APP_TIME_ZONE: Asia/Shanghai
 
       UPLOAD_DIR: /app/data/upload
-      # 对外访问基地址：小程序访问图片需要完整 URL，按实际域名/端口填写
-      # APP_PUBLIC_BASE_URL: https://your-domain.com
+      # 图片对外基地址（CDN / 域名），上传接口返回 <base>/yyyy/MM/<uuid>.<ext>。
+      # 必须指向容器上传目录（/app/data/upload）的对外访问地址，末尾不带 /。
+      APP_PUBLIC_BASE_URL: https://images.sean.ltd
       MYSQL_HOST: mysql8-container
       MYSQL_PORT: 3306
       REDIS_HOST: redis_container
       REDIS_PORT: 6379
     volumes:
-      - app-data:/app/data
+      # 图片落盘目录直连 CDN 源站目录：容器内 /app/data/upload ↔ 宿主机目录（由 UPLOAD_HOST_DIR 指定）。
+      # 容器内 /app/data 下只有 upload 一个子目录会被写入，所以这里只挂 upload，不再额外挂 /app/data。
+      # 容器以非 root 的 appuser 运行，宿主机目录需保证可写（如 chown 1000:1000 或 chmod 777）。
+      - ${UPLOAD_HOST_DIR:-/home/ubuntu/app/picture_bed/upload}:/app/data/upload
     networks:
       - mysql_default
       - redis_default
@@ -36,6 +40,3 @@ networks:
     external: true
   redis_default:
     external: true
-
-volumes:
-  app-data:

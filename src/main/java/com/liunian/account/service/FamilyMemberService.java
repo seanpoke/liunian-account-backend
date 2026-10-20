@@ -193,8 +193,9 @@ public class FamilyMemberService {
 
     public void updateMe(String openid, Long familyId, String nickname, String avatar) {
         FamilyMember me = requireMember(openid, familyId);
-        if (nickname != null) me.setNickname(nickname);
-        if (avatar != null) me.setAvatar(avatar);
+        // nickname 不允许置空（表内 NOT NULL 且为展示名）；avatar 传空串表示清空
+        if (nickname != null && !nickname.isBlank()) me.setNickname(nickname.trim());
+        if (avatar != null) me.setAvatar(avatar.trim());
         me.setUpdatedAt(TimeSupport.now());
         memberMapper.updateById(me);
     }

@@ -92,11 +92,18 @@ public class FileStorageService {
             throw new BizException(ErrorCode.INTERNAL, "保存图片失败");
         }
 
-        String url = publicPrefix + "/" + key;
+        // app.public-base-url 语义 = 上传根目录的对外基地址（CDN / 域名）。
+        // 配置后直接返回绝对地址（如 https://images.sean.ltd/2026/10/uuid.png）；
+        // 未配置时回退为本地静态前缀（/api/files/...），供开发直连使用。
+        String relativeUrl = publicPrefix + "/" + key;
+        String url = publicBaseUrl.isBlank()
+                ? relativeUrl
+                : trimTrailingSlash(publicBaseUrl) + "/" + key;
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("key", key);
         result.put("url", url);
-        result.put("fullUrl", publicBaseUrl.isBlank() ? url : trimTrailingSlash(publicBaseUrl) + url);
+        result.put("fullUrl", url);
         result.put("size", file.getSize());
         result.put("contentType", file.getContentType() == null ? "" : file.getContentType());
         log.info("[UPLOAD] 已保存 {} ({} bytes)", key, file.getSize());

@@ -96,7 +96,9 @@ app:
     expected: ${MYSQL_DB:liunian_account_dev}
     # 是否允许连接生产库；开发/测试保持 false，生产部署需显式设置 DB_ALLOW_PROD=true
     allow-prod: ${DB_ALLOW_PROD:false}
-  # 对外访问基地址，用于拼接图片 fullUrl（留空则返回相对路径）
+  # 上传根目录的对外基地址（CDN / 域名，末尾不要带 /）。
+  # 配置后 POST /upload 直接返回绝对地址，如 https://images.sean.ltd/2026/10/uuid.png；
+  # 留空时返回本地静态相对路径 /api/files/2026/10/uuid.png（本地开发用）。
   public-base-url: ${APP_PUBLIC_BASE_URL:}
   upload:
     # 图片落盘根目录，容器部署时需挂载数据卷（./data:/app/data）

@@ -78,7 +78,7 @@ src/main/java/com/liunian/account
 - 创建者可编辑/删除他人记录（按接口定义）；成员仅能改删自己的。
 - 邀请：拆分 `invitation`（1）+ `join_request`（N）；取消 `used`，未过期即可用；默认 24h 有效，创建时优先复用剩余 ≥6h 的邀请；家庭 ≤10 人。
 - 账目状态：`transaction.status`（1=有效，0=作废），所有查询与统计默认只看有效流水。
-- 图片：`POST /upload` 落盘到 `app.upload.dir`（容器内 `/app/data/upload`，由 compose 的 `app-data` 命名卷持久化），通过 `/api/files/**` 静态访问（该路径不校验 token，靠 UUID 文件名防猜测）。
+- 图片：`POST /upload` 落盘到 `app.upload.dir`（容器内 `/app/data/upload`，由 compose 用 `UPLOAD_HOST_DIR` 绑到宿主机图床目录持久化），通过 `/api/files/**` 静态访问（该路径不校验 token，靠 UUID 文件名防猜测）。
 - 定时提醒：`reminder.cron`（默认每分钟）扫描到点成员，当日家庭已有人记账则跳过；多实例靠 Redis 锁防重复推送。
 
 ## 冒烟测试
