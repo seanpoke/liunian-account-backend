@@ -32,6 +32,7 @@ public class TransactionController {
                         Integer amount,
                         Long categoryId,
                         @NotBlank String date,
+                        String time,
                         String note,
                         List<String> images) {
     }
@@ -43,14 +44,14 @@ public class TransactionController {
     @PostMapping("/transaction")
     public R<Map<String, Object>> create(@RequestBody TxReq req) {
         Long id = transactionService.create(UserContext.get(), req.familyId(), req.type(), req.amount(),
-                req.categoryId(), parse(req.date()), req.note(), req.images());
+                req.categoryId(), parse(req.date()), req.time(), req.note(), req.images());
         return R.ok(Map.of("id", id));
     }
 
     @PutMapping("/transaction/{id}")
     public R<Void> update(@PathVariable Long id, @RequestBody TxReq req) {
         transactionService.update(UserContext.get(), id, req.type(), req.amount(),
-                req.categoryId(), parse(req.date()), req.note(), req.images());
+                req.categoryId(), parse(req.date()), req.time(), req.note(), req.images());
         return R.ok();
     }
 

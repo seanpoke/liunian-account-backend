@@ -66,9 +66,26 @@ public class TransactionService {
         tx.setCategoryColor(c.getColor());
     }
 
+    /** 业务时间 HH:mm（精确到分钟）；空白返回 null，格式非法抛 400。 */
+    private String normalizeTime(String time) {
+        if (time == null) {
+            return null;
+        }
+        String t = time.trim();
+        if (t.isEmpty()) {
+            return null;
+        }
+        try {
+            return java.time.LocalTime.parse(t)
+                    .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
+        } catch (Exception e) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "时间格式须为 HH:mm");
+        }
+    }
+
     @Transactional
     public Long create(String openid, Long familyId, String type, Integer amount,
-                       Long categoryId, LocalDate date, String note, List<String> images) {
+                       Long categoryId, LocalDate date, String occurTime, String note, List<String> images) {
         if (familyId == null) {
             throw new BizException(ErrorCode.BAD_REQUEST, "familyId 必填");
         }
@@ -88,6 +105,7 @@ public class TransactionService {
         tx.setType(type);
         tx.setAmount(amount);
         tx.setDate(date);
+        tx.setOccurTime(normalizeTime(occurTime));
         tx.setNote(note);
         tx.setImages(images);
         tx.setStatus(TransactionRecord.STATUS_VALID);
@@ -100,7 +118,7 @@ public class TransactionService {
 
     @Transactional
     public void update(String openid, Long id, String type, Integer amount,
-                       Long categoryId, LocalDate date, String note, List<String> images) {
+                       Long categoryId, LocalDate date, String occurTime, String note, List<String> images) {
         TransactionRecord tx = requireValid(id);
         FamilyMember m = requireMemberOfFamily(openid, tx.getFamilyId());
         if (!"owner".equals(m.getRole()) && !openid.equals(tx.getOpenid())) {
@@ -118,6 +136,7 @@ public class TransactionService {
         }
         if (categoryId != null) fillCategory(tx, categoryId);
         if (date != null) tx.setDate(date);
+        if (occurTime != null) tx.setOccurTime(normalizeTime(occurTime));
         if (note != null) tx.setNote(note);
         if (images != null) tx.setImages(images);
         tx.setUpdatedAt(TimeSupport.now());
@@ -176,6 +195,7 @@ public class TransactionService {
         m.put("categoryIcon", tx.getCategoryIcon() == null ? "" : tx.getCategoryIcon());
         m.put("categoryColor", tx.getCategoryColor() == null ? "" : tx.getCategoryColor());
         m.put("date", tx.getDate() == null ? "" : tx.getDate().toString());
+        m.put("time", tx.getOccurTime() == null ? "" : tx.getOccurTime());
         m.put("note", tx.getNote() == null ? "" : tx.getNote());
         m.put("images", tx.getImages() == null ? List.of() : tx.getImages());
         m.put("createdAt", tx.getCreatedAt() == null ? "" : tx.getCreatedAt().toString());

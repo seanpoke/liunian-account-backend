@@ -31,6 +31,8 @@ public class TransactionRecord {
     private String categoryIcon;
     private String categoryColor;
     private LocalDate date;
+    /** 业务时间 HH:mm（精确到分钟），历史数据为 null。 */
+    private String occurTime;
     private String note;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

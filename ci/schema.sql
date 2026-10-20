@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS `transaction` (
   `category_icon`  VARCHAR(32)  DEFAULT NULL COMMENT '分类图标（冗余存储，防止图标变更后历史失真）',
   `category_color` VARCHAR(16)  DEFAULT NULL COMMENT '分类颜色（冗余存储，防止分类改色后历史失真）',
   `date`           DATE         NOT NULL COMMENT '记账日期（业务日期，按 Asia/Shanghai）',
+  `occur_time`     CHAR(5)      DEFAULT NULL COMMENT '业务时间 HH:mm（精确到分钟）；历史数据为 NULL，展示时回退 created_at',
   `note`           VARCHAR(200) DEFAULT NULL COMMENT '备注',
   `images`         JSON         DEFAULT NULL COMMENT '凭证/小票图片地址数组（相对路径 /api/files/...）',
   `status`         TINYINT      NOT NULL DEFAULT 1 COMMENT '账目状态：1=有效（默认），0=已作废（成员退出/被移除时置0，不参与查询与统计）',

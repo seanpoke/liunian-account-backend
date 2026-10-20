@@ -22,6 +22,9 @@ public class CategoryService {
     /** code 仅用于系统语义编码：小写字母开头，允许小写字母/数字/下划线。 */
     private static final Pattern CODE_PATTERN = Pattern.compile("^[a-z][a-z0-9_]{1,31}$");
 
+    /** 每个家庭的自定义分类上限（系统预置分类不计入）。 */
+    private static final int MAX_CUSTOM_CATEGORIES = 20;
+
     private final CategoryMapper categoryMapper;
     private final FamilyMemberMapper memberMapper;
 
@@ -74,6 +77,14 @@ public class CategoryService {
             throw new BizException(ErrorCode.BAD_REQUEST, "type 必须是 income/expense");
         }
         String normalizedCode = normalizeCode(code);
+        Long customCount = categoryMapper.selectCount(Wrappers.<Category>lambdaQuery()
+                .eq(Category::getFamilyId, familyId)
+                .eq(Category::getType, type)
+                .eq(Category::getIsSystem, 0));
+        if (customCount != null && customCount >= MAX_CUSTOM_CATEGORIES) {
+            throw new BizException(ErrorCode.BAD_REQUEST,
+                    "该类型自定义分类最多 " + MAX_CUSTOM_CATEGORIES + " 个");
+        }
         Integer maxSort = categoryMapper.selectList(Wrappers.<Category>lambdaQuery()
                         .eq(Category::getFamilyId, familyId))
                 .stream().map(Category::getSort).filter(java.util.Objects::nonNull)
