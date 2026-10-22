@@ -9,6 +9,15 @@
       转账进出成对、金额相同，对总额净影响为 0；「更新余额」产生的 adjust
       走 in/out 方向，因此自然计入余额与「本月净增」。
     -->
+    <!-- 每个账户最近一次流水时间：账户列表按「最近使用」排序用 -->
+    <select id="lastUsedByAccount" resultType="java.util.HashMap">
+        SELECT account_id AS accountId,
+               MAX(created_at) AS lastUsed
+        FROM saving_record
+        WHERE family_id = #{familyId}
+        GROUP BY account_id
+    </select>
+
     <select id="statsByAccount" resultType="java.util.HashMap">
         SELECT account_id AS accountId,
                COALESCE(SUM(CASE WHEN direction IN ('in','transfer_in') THEN amount ELSE 0 END), 0) AS totalIn,

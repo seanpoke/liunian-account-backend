@@ -29,4 +29,10 @@ public interface SavingRecordMapper extends BaseMapper<SavingRecord> {
 
     /** 同表组合记录（账户转账的两条）。 */
     List<SavingRecord> listByLinkId(@Param("linkId") String linkId);
+
+    /**
+     * 每个账户最近一次流水的时间（accountId + lastUsed），用于账户按「最近使用」排序。
+     * 没有流水的账户不会出现在结果里。
+     */
+    List<Map<String, Object>> lastUsedByAccount(@Param("familyId") Long familyId);
 }

@@ -81,12 +81,40 @@ public class SavingAccountService {
     }
 
     public List<Map<String, Object>> buildVos(Long familyId) {
-        // 可见集合 = 本家庭自定义 + 全局预置（family_id IS NULL）；预置固定排在最前
+        // 可见集合 = 本家庭自定义 + 全局预置（family_id IS NULL）
         List<SavingAccount> accounts = accountMapper.selectList(Wrappers.<SavingAccount>lambdaQuery()
                 .and(w -> w.eq(SavingAccount::getFamilyId, familyId).or().isNull(SavingAccount::getFamilyId))
                 .orderByDesc(SavingAccount::getIsSystem)
                 .orderByAsc(SavingAccount::getSort)
                 .orderByAsc(SavingAccount::getId));
+        // 「最近使用」排序只在服务端做：客户端拿不到全量流水的最近时间，
+        // 且储蓄页 / 账户面板 / 记账页账户选择必须看到同一个顺序。
+        // 规则：有用过的在前（按最后一条流水时间倒序）→ 没用过的在后 → 同档内预置优先、再按 sort/id（保证稳定）
+        Map<Long, Object> lastUsed = lastUsedMap(familyId);
+        accounts.sort((a, b) -> {
+            boolean ua = lastUsed.containsKey(a.getId());
+            boolean ub = lastUsed.containsKey(b.getId());
+            if (ua != ub) {
+                return ua ? -1 : 1;
+            }
+            if (ua) {
+                int c = Long.compare(millis(lastUsed.get(b.getId())), millis(lastUsed.get(a.getId())));
+                if (c != 0) {
+                    return c;
+                }
+            }
+            int sa = a.getIsSystem() == null ? 0 : a.getIsSystem();
+            int sb = b.getIsSystem() == null ? 0 : b.getIsSystem();
+            if (sa != sb) {
+                return Integer.compare(sb, sa);
+            }
+            int sortA = a.getSort() == null ? 0 : a.getSort();
+            int sortB = b.getSort() == null ? 0 : b.getSort();
+            if (sortA != sortB) {
+                return Integer.compare(sortA, sortB);
+            }
+            return Long.compare(a.getId(), b.getId());
+        });
         Map<Long, long[]> stats = statsMap(familyId);
         List<Map<String, Object>> result = new ArrayList<>();
         for (SavingAccount a : accounts) {
@@ -143,6 +171,36 @@ public class SavingAccountService {
     public static long num(Map<String, Object> row, String key) {
         Object v = row == null ? null : row.get(key);
         return v instanceof Number n ? n.longValue() : 0L;
+    }
+
+    /** accountId → 最近一次流水的 createdAt（只含用过的账户）。 */
+    private Map<Long, Object> lastUsedMap(Long familyId) {
+        Map<Long, Object> map = new HashMap<>();
+        for (Map<String, Object> row : recordMapper.lastUsedByAccount(familyId)) {
+            Object id = row.get("accountId");
+            Object last = row.get("lastUsed");
+            if (id instanceof Number n && last != null) {
+                map.put(n.longValue(), last);
+            }
+        }
+        return map;
+    }
+
+    /** JDBC 驱动可能把 created_at 映射成 LocalDateTime / Timestamp / Date，统一转毫秒比较。 */
+    private static long millis(Object v) {
+        if (v instanceof java.time.LocalDateTime t) {
+            return t.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+        }
+        if (v instanceof java.sql.Timestamp t) {
+            return t.getTime();
+        }
+        if (v instanceof java.time.Instant i) {
+            return i.toEpochMilli();
+        }
+        if (v instanceof java.util.Date d) {
+            return d.getTime();
+        }
+        return 0L;
     }
 
     // ------------------------------------------------------------------ 写操作用的账户解析
@@ -291,8 +349,10 @@ public class SavingAccountService {
     // ------------------------------------------------------------------ 校验与归一化
 
     private boolean existsName(Long familyId, String name, Long excludeId) {
+        // 同一家庭内账户名唯一，且要连全局预置（活期/定期/国债/基金/保险）一起比——
+        // 否则能建出一个和预置同名的自定义账户，列表里两行「活期」无法区分
         return accountMapper.selectCount(Wrappers.<SavingAccount>lambdaQuery()
-                .eq(SavingAccount::getFamilyId, familyId)
+                .and(w -> w.eq(SavingAccount::getFamilyId, familyId).or().isNull(SavingAccount::getFamilyId))
                 .eq(SavingAccount::getName, name)
                 .ne(excludeId != null, SavingAccount::getId, excludeId)) > 0;
     }
