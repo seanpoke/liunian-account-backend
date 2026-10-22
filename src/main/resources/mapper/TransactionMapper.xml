@@ -63,4 +63,23 @@
         ORDER BY amount DESC
     </select>
 
+    <!--
+      成员退出/被移除：作废其流水，但整对保留与储蓄配对的组合记录
+      （「从储蓄支付」的支出、「到账即存」的收入都由 saving_record.linked_transaction_id 引用）。
+      储蓄余额 = Σ存入−Σ取出 是派生值，作废任一侧都会让资金位置失真。
+    -->
+    <update id="voidByMemberExceptSavingLinked">
+        UPDATE `transaction` t
+        SET t.status = 0,
+            t.voided_at = #{now},
+            t.void_reason = #{reason},
+            t.voided_by = #{operator}
+        WHERE t.family_id = #{familyId}
+          AND t.openid = #{openid}
+          AND t.status = 1
+          AND NOT EXISTS (
+              SELECT 1 FROM saving_record s WHERE s.linked_transaction_id = t.id
+          )
+    </update>
+
 </mapper>

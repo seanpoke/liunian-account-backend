@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.liunian.account.mapper.SavingAccountMapper">
+
+    <!-- 余额是派生值：写操作先锁账户行，再在锁内 SUM，等价于余额原子扣减 -->
+    <select id="lockById" resultType="com.liunian.account.entity.SavingAccount">
+        SELECT * FROM saving_account WHERE id = #{id} AND deleted = 0 FOR UPDATE
+    </select>
+
+    <!-- 含逻辑删除行：自定义账户删除后历史流水仍要显示账户名（不进可选列表）；含全局预置 -->
+    <select id="listAllIncludingDeleted" resultType="com.liunian.account.entity.SavingAccount">
+        SELECT * FROM saving_account
+        WHERE family_id = #{familyId} OR family_id IS NULL
+        ORDER BY is_system DESC, sort, id
+    </select>
+
+    <delete id="physicallyDeleteByFamily">
+        DELETE FROM saving_account WHERE family_id = #{familyId}
+    </delete>
+
+</mapper>

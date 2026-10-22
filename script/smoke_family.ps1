@@ -9,7 +9,7 @@
 #                 an already running instance with WX_MOCK=true.
 #   2) standalone: no API_BASE -> builds target/*.jar and starts it on port 8447.
 #
-# Always reads ci/.env and refuses to run unless MYSQL_DB=liunian_account_dev.
+# Always reads ci/.env and refuses unless MYSQL_DB is liunian_account_dev / liunian_account_test.
 
 $ErrorActionPreference = 'Stop'
 
@@ -26,8 +26,9 @@ Get-Content $envFile -Encoding UTF8 | ForEach-Object {
 }
 
 # ---- dev DB guard ----
-if ($env:MYSQL_DB -ne 'liunian_account_dev') {
-    Write-Host "[DB-GUARD] MYSQL_DB=$env:MYSQL_DB but smoke requires liunian_account_dev. Refused." -ForegroundColor Red
+$allowedDb = @('liunian_account_dev', 'liunian_account_test')
+if ($allowedDb -notcontains $env:MYSQL_DB) {
+    Write-Host "[DB-GUARD] MYSQL_DB=$env:MYSQL_DB is not an allowed dev/test database. Refused." -ForegroundColor Red
     exit 1
 }
 

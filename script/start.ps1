@@ -46,12 +46,12 @@ Get-ChildItem env: | Where-Object { $_.Name -like "SPRING_*" } | ForEach-Object 
     Remove-Item ("env:" + $_.Name)
 }
 
-# DB env guard: dev/test may ONLY connect to liunian_account_dev.
+# DB env guard: only dev/test databases (liunian_account_dev / liunian_account_test) are allowed.
 # liunian_account is the production database (real users) - never touch it here.
-$expectedDb = "liunian_account_dev"
-if (-not $env:MYSQL_DB) { $env:MYSQL_DB = $expectedDb }
-if ($env:MYSQL_DB -ne $expectedDb) {
-    Write-Host ("[DB-GUARD] MYSQL_DB=" + $env:MYSQL_DB + " but dev requires " + $expectedDb + ". Startup refused.") -ForegroundColor Red
+$allowedDb = @("liunian_account_dev", "liunian_account_test")
+if (-not $env:MYSQL_DB) { $env:MYSQL_DB = "liunian_account_dev" }
+if ($allowedDb -notcontains $env:MYSQL_DB) {
+    Write-Host ("[DB-GUARD] MYSQL_DB=" + $env:MYSQL_DB + " is not an allowed dev/test database. Refused.") -ForegroundColor Red
     exit 1
 }
 

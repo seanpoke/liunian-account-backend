@@ -19,7 +19,10 @@ import com.liunian.account.mapper.FamilyMapper;
 import com.liunian.account.mapper.FamilyMemberMapper;
 import com.liunian.account.mapper.InvitationMapper;
 import com.liunian.account.mapper.JoinRequestMapper;
+import com.liunian.account.entity.SavingRecord;
 import com.liunian.account.mapper.ReminderSettingMapper;
+import com.liunian.account.mapper.SavingAccountMapper;
+import com.liunian.account.mapper.SavingRecordMapper;
 import com.liunian.account.mapper.TransactionMapper;
 import com.liunian.account.mapper.UserMapper;
 import org.springframework.stereotype.Service;
@@ -42,11 +45,14 @@ public class FamilyService {
     private final CategoryMapper categoryMapper;
     private final ReminderSettingMapper reminderSettingMapper;
     private final BudgetMapper budgetMapper;
+    private final SavingRecordMapper savingRecordMapper;
+    private final SavingAccountMapper savingAccountMapper;
 
     public FamilyService(FamilyMapper familyMapper, FamilyMemberMapper memberMapper, UserMapper userMapper,
                          TransactionMapper transactionMapper, InvitationMapper invitationMapper,
                          JoinRequestMapper joinRequestMapper, CategoryMapper categoryMapper,
-                         ReminderSettingMapper reminderSettingMapper, BudgetMapper budgetMapper) {
+                         ReminderSettingMapper reminderSettingMapper, BudgetMapper budgetMapper,
+                         SavingRecordMapper savingRecordMapper, SavingAccountMapper savingAccountMapper) {
         this.familyMapper = familyMapper;
         this.memberMapper = memberMapper;
         this.userMapper = userMapper;
@@ -56,6 +62,8 @@ public class FamilyService {
         this.categoryMapper = categoryMapper;
         this.reminderSettingMapper = reminderSettingMapper;
         this.budgetMapper = budgetMapper;
+        this.savingRecordMapper = savingRecordMapper;
+        this.savingAccountMapper = savingAccountMapper;
     }
 
     private FamilyMember activeMemberInFamily(String openid, Long familyId) {
@@ -194,12 +202,16 @@ public class FamilyService {
 
     /**
      * 彻底解散家庭：删除该家庭及其全部关联数据（账单、邀请、加入申请、家庭自定义分类、
-     * 提醒设置、预算、成员绑定）。系统预置分类（family_id=NULL）不受影响。
+     * 提醒设置、预算、成员绑定、储蓄账户与储蓄流水）。系统预置分类 / 预置储蓄账户模板
+     * （family_id=NULL）不受影响。
      * 解散与「退出后无成员」共用此方法，避免重复实现与行为不一致。
      */
     @Transactional
     public void dissolveFamily(Long familyId) {
         transactionMapper.delete(Wrappers.<TransactionRecord>lambdaQuery().eq(TransactionRecord::getFamilyId, familyId));
+        // 储蓄流水与账户按设计文档「家庭解散」要求物理删除（账户表有逻辑删除标记，需走自定义 SQL）
+        savingRecordMapper.delete(Wrappers.<SavingRecord>lambdaQuery().eq(SavingRecord::getFamilyId, familyId));
+        savingAccountMapper.physicallyDeleteByFamily(familyId);
         joinRequestMapper.delete(Wrappers.<JoinRequest>lambdaQuery().eq(JoinRequest::getFamilyId, familyId));
         invitationMapper.delete(Wrappers.<Invitation>lambdaQuery().eq(Invitation::getFamilyId, familyId));
         categoryMapper.delete(Wrappers.<Category>lambdaQuery().eq(Category::getFamilyId, familyId));

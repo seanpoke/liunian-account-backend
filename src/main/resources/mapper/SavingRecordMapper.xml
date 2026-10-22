@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.liunian.account.mapper.SavingRecordMapper">
+
+    <!--
+      余额口径（唯一口径，全项目复用）：
+        balance = Σ(in + transfer_in) − Σ(out + transfer_out)
+      转账进出成对、金额相同，对总额净影响为 0；「更新余额」产生的 adjust
+      走 in/out 方向，因此自然计入余额与「本月净增」。
+    -->
+    <select id="statsByAccount" resultType="java.util.HashMap">
+        SELECT account_id AS accountId,
+               COALESCE(SUM(CASE WHEN direction IN ('in','transfer_in') THEN amount ELSE 0 END), 0) AS totalIn,
+               COALESCE(SUM(CASE WHEN direction IN ('out','transfer_out') THEN amount ELSE 0 END), 0) AS totalOut,
+               COUNT(*) AS recordCount
+        FROM saving_record
+        WHERE family_id = #{familyId}
+        GROUP BY account_id
+    </select>
+
+    <select id="balanceOf" resultType="java.util.HashMap">
+        SELECT COALESCE(SUM(CASE WHEN direction IN ('in','transfer_in') THEN amount ELSE 0 END), 0) AS totalIn,
+               COALESCE(SUM(CASE WHEN direction IN ('out','transfer_out') THEN amount ELSE 0 END), 0) AS totalOut
+        FROM saving_record
+        WHERE family_id = #{familyId} AND account_id = #{accountId}
+    </select>
+
+    <!-- 本月存入/取出：只统计 in/out（不含转账），业务日期 date 口径 -->
+    <select id="periodStats" resultType="java.util.HashMap">
+        SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE 0 END), 0) AS inSum,
+               COALESCE(SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END), 0) AS outSum
+        FROM saving_record
+        WHERE family_id = #{familyId}
+          AND date &gt;= #{start}
+          AND date &lt;= #{end}
+        <if test="accountId != null">AND account_id = #{accountId}</if>
+    </select>
+
+    <select id="listByLinkId" resultType="com.liunian.account.entity.SavingRecord">
+        SELECT * FROM saving_record WHERE link_id = #{linkId} ORDER BY id
+    </select>
+
+</mapper>

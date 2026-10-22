@@ -14,11 +14,13 @@ import java.sql.Statement;
  *
  * <p>Usage: SmokeCleanup &lt;host&gt; &lt;port&gt; &lt;user&gt; &lt;password&gt; &lt;db&gt;</p>
  *
- * <p>Safety: refuses to run unless the target schema is liunian_account_dev.</p>
+ * <p>Safety: refuses to run unless the target schema is a dev/test schema.</p>
  */
 public class SmokeCleanup {
 
-    private static final String DEV_DB = "liunian_account_dev";
+    /** Only dev/test schemas may be touched; liunian_account is production. */
+    private static final java.util.Set<String> ALLOWED_DBS =
+            java.util.Set.of("liunian_account_dev", "liunian_account_test");
     private static final String FAMILY_PATTERN = "^(verify2?_|smoke[A-Z]_)";
     private static final String USER_PATTERN = "^(vo_|vm[234]_|smk_)";
 
@@ -33,8 +35,8 @@ public class SmokeCleanup {
         String password = args[3];
         String db = args[4];
 
-        if (!DEV_DB.equals(db)) {
-            System.out.println("[CLEAN] refused: db=" + db + " is not " + DEV_DB);
+        if (!ALLOWED_DBS.contains(db)) {
+            System.out.println("[CLEAN] refused: db=" + db + " is not a dev/test schema " + ALLOWED_DBS);
             System.exit(2);
         }
 
@@ -44,7 +46,7 @@ public class SmokeCleanup {
         int total = 0;
         try (Connection c = DriverManager.getConnection(url, user, password)) {
             String actual = first(c, "SELECT DATABASE()");
-            if (!DEV_DB.equals(actual)) {
+            if (!ALLOWED_DBS.contains(actual)) {
                 System.out.println("[CLEAN] refused: connected schema is " + actual);
                 System.exit(2);
             }
@@ -55,6 +57,8 @@ public class SmokeCleanup {
                 String ids = ids(c, "SELECT id FROM `family` WHERE name REGEXP '" + FAMILY_PATTERN + "'");
                 if (!ids.isEmpty()) {
                     total += update(c, "DELETE FROM `transaction` WHERE family_id IN (" + ids + ")");
+                    total += update(c, "DELETE FROM `saving_record` WHERE family_id IN (" + ids + ")");
+                    total += update(c, "DELETE FROM `saving_account` WHERE family_id IN (" + ids + ")");
                     total += update(c, "DELETE FROM `join_request` WHERE family_id IN (" + ids + ")");
                     total += update(c, "DELETE FROM `invitation` WHERE family_id IN (" + ids + ")");
                     total += update(c, "DELETE FROM `reminder_setting` WHERE family_id IN (" + ids + ")");

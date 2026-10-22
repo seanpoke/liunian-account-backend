@@ -27,6 +27,12 @@ public class TransactionController {
         this.transactionService = transactionService;
     }
 
+    /**
+     * @param savingAccountId 记账页联动开关：支出表单的「从家庭储蓄支出」/ 收入表单的
+     *                        「同时存入家庭储蓄」。非空时同事务再写一笔储蓄流水
+     *                        （支出→取出、收入→存入），并用 linked_transaction_id 绑定。
+     *                        编辑时该字段只用于校验（组合记录的账户不可改）。
+     */
     public record TxReq(@NotNull Long familyId,
                         @NotBlank String type,
                         Integer amount,
@@ -34,7 +40,8 @@ public class TransactionController {
                         @NotBlank String date,
                         String time,
                         String note,
-                        List<String> images) {
+                        List<String> images,
+                        Long savingAccountId) {
     }
 
     private LocalDate parse(String s) {
@@ -44,14 +51,16 @@ public class TransactionController {
     @PostMapping("/transaction")
     public R<Map<String, Object>> create(@RequestBody TxReq req) {
         Long id = transactionService.create(UserContext.get(), req.familyId(), req.type(), req.amount(),
-                req.categoryId(), parse(req.date()), req.time(), req.note(), req.images());
+                req.categoryId(), parse(req.date()), req.time(), req.note(), req.images(),
+                req.savingAccountId());
         return R.ok(Map.of("id", id));
     }
 
     @PutMapping("/transaction/{id}")
     public R<Void> update(@PathVariable Long id, @RequestBody TxReq req) {
         transactionService.update(UserContext.get(), id, req.type(), req.amount(),
-                req.categoryId(), parse(req.date()), req.time(), req.note(), req.images());
+                req.categoryId(), parse(req.date()), req.time(), req.note(), req.images(),
+                req.savingAccountId());
         return R.ok();
     }
 

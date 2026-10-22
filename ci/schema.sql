@@ -1,24 +1,3 @@
--- 流年小账 数据库脚本 (MySQL 8) —— 金额单位：分(整数)
--- ⚠️ 本脚本仅用于【开发环境】：数据库名 liunian_account_dev。
---    liunian_account 是已有真实用户的生产库，禁止在本项目中对其执行任何建表/改表/清库操作。
--- 数据库需先创建：CREATE DATABASE IF NOT EXISTS liunian_account_dev DEFAULT CHARSET utf8mb4;
---
--- 本脚本为「全新建库」的最终形态（2026-10-19 结构调整后）：
---   1) 时区：业务时间统一由应用侧 Asia/Shanghai 产生，不使用数据库 NOW()；
---   2) family 移除 member_count，成员数改为实时统计 family_member；
---   3) family_member 只保留真实成员（无 status/source），申请审批迁移至 join_request；
---   4) invitation 拆分为 invitation(1) + join_request(N)，取消 used，未过期即可用；
---   5) transaction 增加作废状态（成员退出/被移除时置 0，不参与查询统计）；
---   6) category.code 增加全局唯一约束（自定义分类不填 code 即可，NULL 互不冲突）；
---   7) category 增加 deleted 逻辑删除标记（删除分类不物理删行，历史账单靠快照展示）。
---
--- 存量库升级请勿执行本脚本，改执行：ci/migration/20261019_refactor.sql
--- 分类逻辑删除的存量升级：ci/migration/20261021_category_soft_delete.sql
-
--- 防御护栏：显式切到【开发库】，避免误在共享实例的 root 默认 schema（如 checkin）
--- 或生产库 liunian_account 上建表。
-USE `liunian_account_dev`;
-
 CREATE TABLE IF NOT EXISTS `user` (
   `id`                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '用户ID，自增主键',
   `openid`            VARCHAR(64)  NOT NULL COMMENT '微信 openid，全局唯一',
@@ -43,7 +22,7 @@ CREATE TABLE IF NOT EXISTS `family` (
   `updated_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_creator` (`creator_openid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='家庭表（成员数由 family_member 实时统计，不再冗余存储）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='家庭表';
 
 CREATE TABLE IF NOT EXISTS `family_member` (
   `id`         BIGINT       NOT NULL AUTO_INCREMENT COMMENT '成员记录ID，自增主键',
@@ -58,7 +37,7 @@ CREATE TABLE IF NOT EXISTS `family_member` (
   UNIQUE KEY `uk_family_openid` (`family_id`,`openid`),
   KEY `idx_family` (`family_id`),
   KEY `idx_openid` (`openid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='家庭成员表（仅保留真实成员；退出/被移除即物理删除，申请见 join_request）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='家庭成员表';
 
 CREATE TABLE IF NOT EXISTS `invitation` (
   `id`             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '邀请记录ID，自增主键',
@@ -73,7 +52,7 @@ CREATE TABLE IF NOT EXISTS `invitation` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_token` (`token`),
   KEY `idx_family_type_expire` (`family_id`,`type`,`expire_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='家庭邀请表（一条邀请可被多人使用，1:N）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='家庭邀请表';
 
 CREATE TABLE IF NOT EXISTS `join_request` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '申请记录ID，自增主键',
@@ -94,7 +73,7 @@ CREATE TABLE IF NOT EXISTS `join_request` (
   UNIQUE KEY `uk_family_applicant_pending` (`family_id`,`applicant_openid`,`pending_flag`),
   KEY `idx_family_status_created` (`family_id`,`status`,`created_at`),
   KEY `idx_invitation` (`invitation_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='加入家庭申请/审批表（审批通过后写入 family_member，本表保留审批留痕）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='加入申请审批表';
 
 CREATE TABLE IF NOT EXISTS `transaction` (
   `id`             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '账目ID，自增主键',
@@ -119,7 +98,7 @@ CREATE TABLE IF NOT EXISTS `transaction` (
   PRIMARY KEY (`id`),
   KEY `idx_family_status_date` (`family_id`,`status`,`date`),
   KEY `idx_family_openid` (`family_id`,`openid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='账目流水表（查询与统计默认只取 status=1 的有效流水）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='账目流水表';
 
 CREATE TABLE IF NOT EXISTS `category` (
   `id`        BIGINT       NOT NULL AUTO_INCREMENT COMMENT '分类ID，自增主键',
@@ -135,7 +114,7 @@ CREATE TABLE IF NOT EXISTS `category` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_code` (`code`),
   KEY `idx_family_type` (`family_id`,`type`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分类表（系统预置 family_id=NULL；自定义分类 code 留空；删除为逻辑删除）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分类表';
 
 CREATE TABLE IF NOT EXISTS `reminder_setting` (
   `id`                  BIGINT       NOT NULL AUTO_INCREMENT COMMENT '提醒设置ID，自增主键',
@@ -163,15 +142,116 @@ CREATE TABLE IF NOT EXISTS `budget` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='家庭预算表';
 
 -- 系统预置分类（family_id=NULL 表示 global）；code=语义编码，icon=emoji，color=账单列表配色
+-- 清单取自参考产品截图：支出 39 项、收入 6 项。
+-- 说明：截图中支出里的「储蓄」已排除——本产品有独立储蓄模块，存钱不是支出（见 doc/储蓄功能设计.md）；
+--       截图最后一项「设置」是产品入口，不是分类。列表外的分类由家庭自定义（每类型上限 20 个）。
 INSERT IGNORE INTO `category` (`family_id`,`name`,`type`,`code`,`icon`,`color`,`sort`,`is_system`) VALUES
-  (NULL,'餐饮','expense','food',        '🍜','#FF7043',1,1),
-  (NULL,'交通','expense','transport',   '🚌','#42A5F5',2,1),
-  (NULL,'购物','expense','shopping',    '🛒','#AB47BC',3,1),
-  (NULL,'居家','expense','home',        '🏠','#26A69A',4,1),
-  (NULL,'娱乐','expense','fun',         '🎮','#FFA726',5,1),
-  (NULL,'医疗','expense','medical',     '💊','#EF5350',6,1),
-  (NULL,'其他','expense','other',       '📦','#78909C',7,1),
-  (NULL,'工资','income', 'salary',      '💰','#66BB6A',1,1),
-  (NULL,'奖金','income', 'bonus',       '🎁','#9CCC65',2,1),
-  (NULL,'理财','income', 'finance',     '📈','#29B6F6',3,1),
-  (NULL,'其他','income', 'other_income', '📦','#78909C',4,1);
+  (NULL,'餐饮','expense','food',            '🍜','#FF7043', 1,1),
+  (NULL,'住房','expense','housing',         '🏠','#8D6E63', 2,1),
+  (NULL,'医疗','expense','medical',         '💊','#EF5350', 3,1),
+  (NULL,'汽车','expense','car',             '🚗','#42A5F5', 4,1),
+  (NULL,'电动车','expense','e_bike',        '🛵','#7E57C2', 5,1),
+  (NULL,'饮品','expense','drink',           '🥤','#FFA726', 6,1),
+  (NULL,'花呗','expense','huabei',          '💳','#5C6BC0', 7,1),
+  (NULL,'购物','expense','shopping',        '🛒','#AB47BC', 8,1),
+  (NULL,'装修','expense','decoration',      '🔨','#A1887F', 9,1),
+  (NULL,'日用','expense','daily',           '🧴','#26A69A',10,1),
+  (NULL,'的士','expense','taxi',            '🚕','#4FC3F7',11,1),
+  (NULL,'交通','expense','transport',       '🚌','#29B6F6',12,1),
+  (NULL,'蔬菜','expense','vegetable',       '🥬','#66BB6A',13,1),
+  (NULL,'水果','expense','fruit',           '🍎','#EF6C00',14,1),
+  (NULL,'零食','expense','snack',           '🍿','#FFCA28',15,1),
+  (NULL,'运动','expense','sport',           '⚽','#43A047',16,1),
+  (NULL,'娱乐','expense','fun',             '🎮','#FB8C00',17,1),
+  (NULL,'通讯','expense','telecom',         '📱','#00ACC1',18,1),
+  (NULL,'服饰','expense','clothes',         '👕','#EC407A',19,1),
+  (NULL,'美容','expense','beauty',          '💅','#F06292',20,1),
+  (NULL,'居家','expense','home',            '🛋️','#00897B',21,1),
+  (NULL,'孩子','expense','child',           '🧒','#FFB74D',22,1),
+  (NULL,'长辈','expense','elder',           '👴','#BCAAA4',23,1),
+  (NULL,'社交','expense','social',          '🍻','#FF8A65',24,1),
+  (NULL,'旅行','expense','travel',          '✈️','#039BE5',25,1),
+  (NULL,'烟酒','expense','tobacco_alcohol', '🍷','#8E24AA',26,1),
+  (NULL,'数码','expense','digital',         '💻','#546E7A',27,1),
+  (NULL,'书籍','expense','book',            '📚','#5E35B1',28,1),
+  (NULL,'学习','expense','study',           '🎓','#3949AB',29,1),
+  (NULL,'宠物','expense','pet',             '🐶','#FFB300',30,1),
+  (NULL,'礼金','expense','gift_out',        '🧧','#E53935',31,1),
+  (NULL,'礼物','expense','gift',            '🎁','#D81B60',32,1),
+  (NULL,'办公','expense','office',          '💼','#455A64',33,1),
+  (NULL,'维修','expense','repair',          '🔧','#78909C',34,1),
+  (NULL,'捐赠','expense','donate',          '❤️','#E91E63',35,1),
+  (NULL,'彩票','expense','lottery',         '🎫','#F4511E',36,1),
+  (NULL,'亲友','expense','relatives',       '👨‍👩‍👧','#FF8A80',37,1),
+  (NULL,'快递','expense','express',         '📦','#6D4C41',38,1),
+  (NULL,'投资','expense','invest',          '📈','#009688',39,1),
+  (NULL,'工资','income', 'salary',          '💰','#66BB6A', 1,1),
+  (NULL,'兼职','income', 'part_time',       '💼','#9CCC65', 2,1),
+  (NULL,'理财','income', 'finance',         '📈','#29B6F6', 3,1),
+  (NULL,'礼金','income', 'gift_in',         '🧧','#FFA726', 4,1),
+  (NULL,'其它','income', 'other_income',    '📦','#78909C', 5,1),
+  (NULL,'资产','income', 'asset',           '🏦','#42A5F5', 6,1);
+
+-- ============================================================================
+-- 储蓄模块（2026-10-22）
+--   两本账：transaction 是收支账本；saving_record 是储蓄账本，两者互不校验。
+--   余额永远派生（Σ存入+转入 − Σ取出−转出），不落 balance 字段。
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS `saving_account` (
+  `id`         BIGINT       NOT NULL AUTO_INCREMENT COMMENT '储蓄账户ID，自增主键',
+  `family_id`  BIGINT       DEFAULT NULL COMMENT '归属家庭ID；NULL = 系统预置（全局 5 条，与 category.family_id 同套路；完全只读，不可改名/停用/删除）',
+  `name`       VARCHAR(32)  NOT NULL COMMENT '账户名，如「活期」「国债」（重名校验在应用层，不加唯一索引：逻辑删除行会占键、且 NULL 家庭不生效）',
+  `icon`       VARCHAR(32)  DEFAULT NULL COMMENT '账户图标（emoji，如 💵）',
+  `color`      VARCHAR(16)  DEFAULT NULL COMMENT '配色（十六进制，如 #07C160）',
+  `sort`       INT          NOT NULL DEFAULT 0 COMMENT '排序权重，越小越靠前',
+  `is_system`  TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '0=家庭自定义，1=系统预置（全局只读，不可改名/停用/删除）',
+  `status`     TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '1=启用，0=停用（仅自定义账户可停用；停用后不进新增存取/支付/转账选择列表，余额仍计入储蓄余额总额）',
+  `deleted`    TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '逻辑删除标记：0=有效，1=已删除（仅余额为 0 的自定义账户可删，历史流水仍靠 account_id 展示账户名）',
+  `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_family` (`family_id`),
+  KEY `idx_family_sort` (`family_id`,`deleted`,`sort`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='储蓄账户表';
+
+CREATE TABLE IF NOT EXISTS `saving_record` (
+  `id`                    BIGINT       NOT NULL AUTO_INCREMENT COMMENT '储蓄流水ID，自增主键',
+  `family_id`             BIGINT       NOT NULL COMMENT '所属家庭ID',
+  `account_id`            BIGINT       NOT NULL COMMENT '所属储蓄账户ID（必填；新增存取未选择时默认「活期」）',
+  `direction`             VARCHAR(16)  NOT NULL COMMENT '方向：in=存入，out=取出，transfer_in=转入，transfer_out=转出',
+  `source`                VARCHAR(16)  NOT NULL DEFAULT 'normal' COMMENT '来源：normal=真实资金进出，adjust=「更新余额」生成的校准流水（标「余额调整」）',
+  `amount`                INT          NOT NULL COMMENT '金额，单位分（整数），恒为正，方向由 direction 表达',
+  `date`                  DATE         NOT NULL COMMENT '业务日期（按 Asia/Shanghai；「本月存入/取出」按此字段统计，不用 created_at）',
+  `note`                  VARCHAR(200) DEFAULT NULL COMMENT '备注（用途或来源，如「买入国债」「春节旅行」）',
+  `openid`                VARCHAR(64)  NOT NULL COMMENT '操作人 openid（owner 代改他人记录时不改变）',
+  `operator_name`         VARCHAR(32)  DEFAULT NULL COMMENT '操作人昵称快照（family_member 退出即物理删行，历史流水靠本字段展示「谁记的」）',
+  `link_id`               VARCHAR(40)  DEFAULT NULL COMMENT '同表组合记录关联键：账户转账的两条记录共享同一值',
+  `linked_transaction_id` BIGINT       DEFAULT NULL COMMENT '跨表组合关联的账单 id（仅「从储蓄支付」「到账即存」两处使用）',
+  `created_at`            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_family_date` (`family_id`,`date`),
+  KEY `idx_family_account` (`family_id`,`account_id`),
+  KEY `idx_link` (`link_id`),
+  KEY `idx_linked_tx` (`linked_transaction_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='储蓄流水表';
+
+-- 系统预置储蓄账户（全局 5 条）：family_id=NULL、is_system=1。
+--   活期（默认，sort=1）/ 定期 / 国债 / 基金 / 保险。
+--   完全只读：不可改名、不可停用、不可删除；家庭只能新增自定义账户（≤20）。
+INSERT INTO `saving_account` (`family_id`,`name`,`icon`,`color`,`sort`,`is_system`,`status`)
+SELECT CAST(NULL AS SIGNED),'活期','💵','#07C160',1,1,1 FROM DUAL
+ WHERE NOT EXISTS (SELECT 1 FROM `saving_account` WHERE `family_id` IS NULL AND `name` = '活期');
+INSERT INTO `saving_account` (`family_id`,`name`,`icon`,`color`,`sort`,`is_system`,`status`)
+SELECT CAST(NULL AS SIGNED),'定期','🏦','#42A5F5',2,1,1 FROM DUAL
+ WHERE NOT EXISTS (SELECT 1 FROM `saving_account` WHERE `family_id` IS NULL AND `name` = '定期');
+INSERT INTO `saving_account` (`family_id`,`name`,`icon`,`color`,`sort`,`is_system`,`status`)
+SELECT CAST(NULL AS SIGNED),'国债','📜','#26A69A',3,1,1 FROM DUAL
+ WHERE NOT EXISTS (SELECT 1 FROM `saving_account` WHERE `family_id` IS NULL AND `name` = '国债');
+INSERT INTO `saving_account` (`family_id`,`name`,`icon`,`color`,`sort`,`is_system`,`status`)
+SELECT CAST(NULL AS SIGNED),'基金','📈','#AB47BC',4,1,1 FROM DUAL
+ WHERE NOT EXISTS (SELECT 1 FROM `saving_account` WHERE `family_id` IS NULL AND `name` = '基金');
+INSERT INTO `saving_account` (`family_id`,`name`,`icon`,`color`,`sort`,`is_system`,`status`)
+SELECT CAST(NULL AS SIGNED),'保险','🛡️','#FFA726',5,1,1 FROM DUAL
+ WHERE NOT EXISTS (SELECT 1 FROM `saving_account` WHERE `family_id` IS NULL AND `name` = '保险');
