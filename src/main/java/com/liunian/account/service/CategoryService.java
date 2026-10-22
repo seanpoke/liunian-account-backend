@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.liunian.account.common.BizException;
 import com.liunian.account.common.ErrorCode;
 import com.liunian.account.entity.Category;
+import com.liunian.account.entity.FamilyMember;
 import com.liunian.account.mapper.CategoryMapper;
 import com.liunian.account.mapper.FamilyMemberMapper;
 import org.springframework.dao.DuplicateKeyException;
@@ -34,10 +35,23 @@ public class CategoryService {
     }
 
     private void requireMember(String openid, Long familyId) {
-        if (memberMapper.selectCount(Wrappers.<com.liunian.account.entity.FamilyMember>lambdaQuery()
-                .eq(com.liunian.account.entity.FamilyMember::getOpenid, openid)
-                .eq(com.liunian.account.entity.FamilyMember::getFamilyId, familyId)) == 0) {
+        if (memberMapper.selectCount(Wrappers.<FamilyMember>lambdaQuery()
+                .eq(FamilyMember::getOpenid, openid)
+                .eq(FamilyMember::getFamilyId, familyId)) == 0) {
             throw new BizException(ErrorCode.FORBIDDEN, "非家庭成员");
+        }
+    }
+
+    /** 仅家庭创建者（owner）可删除分类。 */
+    private void requireOwner(String openid, Long familyId) {
+        FamilyMember m = memberMapper.selectOne(Wrappers.<FamilyMember>lambdaQuery()
+                .eq(FamilyMember::getOpenid, openid)
+                .eq(FamilyMember::getFamilyId, familyId));
+        if (m == null) {
+            throw new BizException(ErrorCode.FORBIDDEN, "非家庭成员");
+        }
+        if (!"owner".equals(m.getRole())) {
+            throw new BizException(ErrorCode.FORBIDDEN, "仅创建者可删除分类");
         }
     }
 
@@ -125,6 +139,11 @@ public class CategoryService {
         return c;
     }
 
+    /**
+     * 删除家庭自定义分类：仅 owner 可调用，且为逻辑删除。
+     * 不物理删行——历史账单项的 categoryId 仍指向该行，展示用的是
+     * transaction 里冗余的 category_name/icon/color 快照，因此账单不受影响。
+     */
     @Transactional
     public void delete(String openid, Long categoryId) {
         Category c = categoryMapper.selectById(categoryId);
@@ -134,8 +153,11 @@ public class CategoryService {
         if (c.getIsSystem() != null && c.getIsSystem() == 1) {
             throw new BizException(ErrorCode.FORBIDDEN, "系统预置分类不可删除");
         }
-        // 自定义分类仅能删本家庭的（系统分类 family_id 为 NULL，已在上一步拦掉）
-        requireMember(openid, c.getFamilyId());
+        if (c.getFamilyId() == null) {
+            throw new BizException(ErrorCode.FORBIDDEN, "系统预置分类不可删除");
+        }
+        requireOwner(openid, c.getFamilyId());
+        // MyBatis-Plus 逻辑删除：deleteById 实际是 UPDATE category SET deleted=1
         categoryMapper.deleteById(categoryId);
     }
 }

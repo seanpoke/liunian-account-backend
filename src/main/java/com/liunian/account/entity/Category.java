@@ -20,4 +20,11 @@ public class Category {
     private String color;
     private Integer sort;
     private Integer isSystem;   // 0/1
+
+    /**
+     * 逻辑删除标记（MyBatis-Plus 全局 logic-delete-field=deleted 自动生效）：
+     * 0=有效，1=已删除。删除分类只置标记、不物理删行，历史账单仍靠
+     * transaction 里的 category_name/icon/color 快照正常展示。
+     */
+    private Integer deleted;
 }

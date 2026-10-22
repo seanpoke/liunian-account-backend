@@ -58,7 +58,8 @@ public class TransactionService {
                 .eq(Category::getId, categoryId)
                 .and(w -> w.eq(Category::getFamilyId, tx.getFamilyId()).or().isNull(Category::getFamilyId)));
         if (c == null) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "分类不存在");
+            // 分类已逻辑删除时查询会自动过滤，故与「不存在」同一提示
+            throw new BizException(ErrorCode.BAD_REQUEST, "分类不存在或已删除");
         }
         tx.setCategoryId(c.getId());
         tx.setCategoryName(c.getName());
@@ -134,7 +135,9 @@ public class TransactionService {
             if (amount <= 0) throw new BizException(ErrorCode.BAD_REQUEST, "金额必须大于 0");
             tx.setAmount(amount);
         }
-        if (categoryId != null) fillCategory(tx, categoryId);
+        // 分类未变更时不重新校验：历史账单的分类可能已被删除，
+        // 此时只改金额/备注等字段仍应可以保存（保留原有分类快照）
+        if (categoryId != null && !categoryId.equals(tx.getCategoryId())) fillCategory(tx, categoryId);
         if (date != null) tx.setDate(date);
         if (occurTime != null) tx.setOccurTime(normalizeTime(occurTime));
         if (note != null) tx.setNote(note);
@@ -246,7 +249,10 @@ public class TransactionService {
         if (member != null) q.eq(TransactionRecord::getOpenid, member);
         if (type != null) q.eq(TransactionRecord::getType, type);
         if (category != null) q.eq(TransactionRecord::getCategoryId, category);
-        q.orderByDesc(TransactionRecord::getDate).orderByDesc(TransactionRecord::getCreatedAt);
+        // id 兜底排序：同一天且同一创建秒的记录在分页边界上顺序稳定，避免翻页重复/漏项
+        q.orderByDesc(TransactionRecord::getDate)
+                .orderByDesc(TransactionRecord::getCreatedAt)
+                .orderByDesc(TransactionRecord::getId);
 
         IPage<TransactionRecord> p = transactionMapper.selectPage(new Page<>(page, size), q);
         List<String> openids = p.getRecords().stream().map(TransactionRecord::getOpenid).distinct().toList();

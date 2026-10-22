@@ -9,9 +9,11 @@
 --   3) family_member 只保留真实成员（无 status/source），申请审批迁移至 join_request；
 --   4) invitation 拆分为 invitation(1) + join_request(N)，取消 used，未过期即可用；
 --   5) transaction 增加作废状态（成员退出/被移除时置 0，不参与查询统计）；
---   6) category.code 增加全局唯一约束（自定义分类不填 code 即可，NULL 互不冲突）。
+--   6) category.code 增加全局唯一约束（自定义分类不填 code 即可，NULL 互不冲突）；
+--   7) category 增加 deleted 逻辑删除标记（删除分类不物理删行，历史账单靠快照展示）。
 --
 -- 存量库升级请勿执行本脚本，改执行：ci/migration/20261019_refactor.sql
+-- 分类逻辑删除的存量升级：ci/migration/20261021_category_soft_delete.sql
 
 -- 防御护栏：显式切到【开发库】，避免误在共享实例的 root 默认 schema（如 checkin）
 -- 或生产库 liunian_account 上建表。
@@ -129,10 +131,11 @@ CREATE TABLE IF NOT EXISTS `category` (
   `color`     VARCHAR(16)  DEFAULT NULL COMMENT '分类颜色（十六进制，如 #FF7043），用于账单列表着色并快照进 transaction.category_color',
   `sort`      INT          DEFAULT 0 COMMENT '排序权重，越小越靠前',
   `is_system` TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '是否系统预置：0=自定义，1=系统',
+  `deleted`   TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '逻辑删除标记：0=有效，1=已删除（不物理删行，历史账单靠 transaction 的分类快照展示）',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_code` (`code`),
   KEY `idx_family_type` (`family_id`,`type`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分类表（系统预置 family_id=NULL；自定义分类 code 留空）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分类表（系统预置 family_id=NULL；自定义分类 code 留空；删除为逻辑删除）';
 
 CREATE TABLE IF NOT EXISTS `reminder_setting` (
   `id`                  BIGINT       NOT NULL AUTO_INCREMENT COMMENT '提醒设置ID，自增主键',
